@@ -14,7 +14,6 @@ void timer_calibrate (void);
 int64_t timer_ticks (void);
 int64_t timer_elapsed (int64_t);
 
-
 /* Used in timer_sleep to insert blocked threads in the right order */
 bool list_elem_blocked_thread_less(const struct list_elem* elem1, const struct list_elem* elem2, void* aux);
 

@@ -201,7 +201,7 @@ timer_interrupt (struct intr_frame *args UNUSED)
 	  struct list_elem* elem = list_begin(&blocked_list);
 	  struct thread* test_thread = list_entry(elem, struct thread, elem);
 
-	  while(elem != list_end(&blocked_list) && test_thread->tick_unblock <= ticks)
+	  while(!list_empty(&blocked_list) && test_thread->tick_unblock <= ticks)
 	  {
 		  elem = list_remove(elem);
 		  thread_unblock(test_thread);
