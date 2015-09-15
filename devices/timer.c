@@ -7,6 +7,7 @@
 #include "threads/interrupt.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
+#include "threads/malloc.h"
   
 /* See [8254] for hardware details of the 8254 timer chip. */
 
@@ -94,7 +95,7 @@ timer_elapsed (int64_t then)
  * Compares two elements by time to unblock and by priority if times are the same.
  * Returns TRUE if element elem1 must be unblocked before element elem2
  */
-int list_elem_blocked_thread_less(const struct list_elem* elem1, const struct list_elem* elem2)
+bool list_elem_blocked_thread_less(const struct list_elem* elem1, const struct list_elem* elem2, void* aux)
 {
 	struct blocked_thread* blocked_thread1 = list_entry(elem1, struct blocked_thread, elem);
 	struct blocked_thread* blocked_thread2 = list_entry(elem2, struct blocked_thread, elem);
@@ -201,9 +202,9 @@ timer_interrupt (struct intr_frame *args UNUSED)
 	  struct list_elem* elem = list_begin(&blocked_list);
 	  struct blocked_thread* test_thread = list_entry(elem, struct blocked_thread, elem);
 
-	  while(elem != list_end(blocked_list) && test_thread->tick_unblock <= ticks)
+	  while(elem != list_end(&blocked_list) && test_thread->tick_unblock <= ticks)
 	  {
-		  thread_unclock(test_thread->thread);
+		  thread_unblock(test_thread->thread);
 		  elem = list_remove(elem);
 		  free(test_thread);
 		  test_thread = list_entry(elem, struct blocked_thread, elem);
