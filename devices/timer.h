@@ -3,6 +3,7 @@
 
 #include <round.h>
 #include <stdint.h>
+#include <list.h>
 
 /* Number of timer interrupts per second. */
 #define TIMER_FREQ 100
@@ -23,7 +24,8 @@ struct blocked_thread
 
 
 /* Used in timer_sleep to insert blocked threads in the right order */
-int list_elem_blocked_thread_less(const struct list_elem* elem1, const struct list_elem* elem2);
+bool list_elem_blocked_thread_less(const struct list_elem* elem1, const struct list_elem* elem2, void* aux);
+
 /* Sleep and yield the CPU to other threads. */
 void timer_sleep (int64_t ticks);
 void timer_msleep (int64_t milliseconds);
