@@ -71,6 +71,8 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
+bool thread_list_less(const struct list_elem* elem1, const struct list_elem* elem2, void* aux);
+
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -323,7 +325,7 @@ thread_yield (void)
   old_level = intr_disable ();
   if (cur != idle_thread) 
 	  /* need to be inserted by priority */
-	  list_insert_ordered (&ready_list, &t->elem, thread_list_less, NULL);
+	  list_insert_ordered (&ready_list, &cur->elem, thread_list_less, NULL);
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -345,7 +347,7 @@ thread_foreach (thread_action_func *func, void *aux)
       func (t, aux);
     }
 }
-
+/*
 void check_pri_donation(struct thread* cur, int depth)
 {
 	if (depth < MAX_DONATION_LVL)
@@ -353,18 +355,18 @@ void check_pri_donation(struct thread* cur, int depth)
 
 	}
 }
-
+*/
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) 
 {
-	ASSERT(new_priority <= PRI_MAX && new_pirority >= PRI_MIN);
+	ASSERT(new_priority <= PRI_MAX && new_priority >= PRI_MIN);
 	struct thread *cur = thread_current ();
 	enum intr_level old_level;
 
 	old_level = intr_disable();
 	cur->real_pri = new_priority;
-	if (cur->priority < cur-> new_priority)
+	if (cur->priority < new_priority)
 		cur->priority = new_priority;
 
 }
