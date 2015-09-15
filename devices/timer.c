@@ -203,8 +203,8 @@ timer_interrupt (struct intr_frame *args UNUSED)
 
 	  while(elem != list_end(&blocked_list) && test_thread->tick_unblock <= ticks)
 	  {
-		  thread_unblock(test_thread);
 		  elem = list_remove(elem);
+		  thread_unblock(test_thread);
 		  test_thread = list_entry(elem, struct thread, elem);
 	  }
   }
