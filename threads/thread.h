@@ -23,6 +23,7 @@ typedef int tid_t;
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
+#define MAX_DONATION_LVL 8				/* Maximum depth of donation */
 
 /* A kernel thread or user process.
 
@@ -88,6 +89,11 @@ struct thread
     char name[16];                      /* Name (for debugging purposes). */
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
+    /* changes project 1*/
+    int real_pri;						/* Not donated priority of a thread */
+    int64_t tick_unblock;				/* Tick after which should a thread must be waken up */
+    /* end of changes project 1 */
+
     struct list_elem allelem;           /* List element for all threads list. */
 
     /* Shared between thread.c and synch.c. */

@@ -209,6 +209,12 @@ thread_create (const char *name, int priority,
   /* Add to run queue. */
   thread_unblock (t);
 
+  /*
+   * New thread may have the highest priority,
+   * Make scheduler to pick new thread with the highest priority.
+   */
+  thread_yield();
+
   return tid;
 }
 
@@ -245,7 +251,7 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+  list_insert_ordered (&ready_list, &t->elem, thread_list_less, NULL);
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -316,7 +322,8 @@ thread_yield (void)
 
   old_level = intr_disable ();
   if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+	  /* need to be inserted by priority */
+	  list_insert_ordered (&ready_list, &t->elem, thread_list_less, NULL);
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -339,11 +346,27 @@ thread_foreach (thread_action_func *func, void *aux)
     }
 }
 
+void check_pri_donation(struct thread* cur, int depth)
+{
+	if (depth < MAX_DONATION_LVL)
+	{
+
+	}
+}
+
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) 
 {
-  thread_current ()->priority = new_priority;
+	ASSERT(new_priority <= PRI_MAX && new_pirority >= PRI_MIN);
+	struct thread *cur = thread_current ();
+	enum intr_level old_level;
+
+	old_level = intr_disable();
+	cur->real_pri = new_priority;
+	if (cur->priority < cur-> new_priority)
+		cur->priority = new_priority;
+
 }
 
 /* Returns the current thread's priority. */
@@ -467,11 +490,16 @@ init_thread (struct thread *t, const char *name, int priority)
   t->status = THREAD_BLOCKED;
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
-  t->priority = priority;
+  t->real_pri = t->priority = priority;
   t->magic = THREAD_MAGIC;
   list_push_back (&all_list, &t->allelem);
 }
 
+/* Compares two threads by currently set priority (it may be donated one) */
+bool thread_list_less(const struct list_elem* elem1, const struct list_elem* elem2, void* aux)
+{
+	return list_entry(elem1, struct thread, elem)->priority > list_entry(elem2, struct thread, elem);
+}
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
    returns a pointer to the frame's base. */
 static void *

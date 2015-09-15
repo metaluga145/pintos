@@ -97,11 +97,11 @@ timer_elapsed (int64_t then)
  */
 bool list_elem_blocked_thread_less(const struct list_elem* elem1, const struct list_elem* elem2, void* aux)
 {
-	struct blocked_thread* blocked_thread1 = list_entry(elem1, struct blocked_thread, elem);
-	struct blocked_thread* blocked_thread2 = list_entry(elem2, struct blocked_thread, elem);
+	struct thread* blocked_thread1 = list_entry(elem1, struct thread, elem);
+	struct thread* blocked_thread2 = list_entry(elem2, struct thread, elem);
 
 	if(blocked_thread1->tick_unblock == blocked_thread2->tick_unblock)
-		return blocked_thread1->thread->priority > blocked_thread2->thread->priority;
+		return blocked_thread1->priority > blocked_thread2->priority;
 	else return blocked_thread1->tick_unblock < blocked_thread2->tick_unblock;
 }
 
@@ -109,10 +109,9 @@ bool list_elem_blocked_thread_less(const struct list_elem* elem1, const struct l
 void
 timer_sleep (int64_t ticks) 
 {
-  struct blocked_thread* new_blocked_thread = (struct blocked_thread*)malloc(sizeof(struct blocked_thread));
   ASSERT(ticks > 0);
+  struct thread* new_blocked_thread = thread_current();
   new_blocked_thread->tick_unblock = timer_ticks() + ticks;
-  new_blocked_thread->thread = thread_current();
 
   intr_disable();
 
@@ -200,14 +199,13 @@ timer_interrupt (struct intr_frame *args UNUSED)
   if(!list_empty(&blocked_list))
   {
 	  struct list_elem* elem = list_begin(&blocked_list);
-	  struct blocked_thread* test_thread = list_entry(elem, struct blocked_thread, elem);
+	  struct thread* test_thread = list_entry(elem, struct thread, elem);
 
 	  while(elem != list_end(&blocked_list) && test_thread->tick_unblock <= ticks)
 	  {
-		  thread_unblock(test_thread->thread);
+		  thread_unblock(test_thread);
 		  elem = list_remove(elem);
-		  free(test_thread);
-		  test_thread = list_entry(elem, struct blocked_thread, elem);
+		  test_thread = list_entry(elem, struct thread, elem);
 	  }
   }
   thread_tick ();
