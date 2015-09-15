@@ -13,6 +13,17 @@ void timer_calibrate (void);
 int64_t timer_ticks (void);
 int64_t timer_elapsed (int64_t);
 
+/* Element of list of blocked threads, which is awaiting for the tick tick_unblock */
+struct blocked_thread
+{
+	struct list_elem elem;
+	int64_t tick_unblock;
+	struct thread* thread;
+};
+
+
+/* Used in timer_sleep to insert blocked threads in the right order */
+int list_elem_blocked_thread_less(const struct list_elem* elem1, const struct list_elem* elem2);
 /* Sleep and yield the CPU to other threads. */
 void timer_sleep (int64_t ticks);
 void timer_msleep (int64_t milliseconds);

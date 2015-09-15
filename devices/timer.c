@@ -17,6 +17,9 @@
 #error TIMER_FREQ <= 1000 recommended
 #endif
 
+/* List of blocked threads */
+static struct list blocked_list;
+
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
 
@@ -37,6 +40,8 @@ timer_init (void)
 {
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
+
+  list_init(&blocked_list);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -84,16 +89,36 @@ timer_elapsed (int64_t then)
   return timer_ticks () - then;
 }
 
-/* Sleeps for approximately TICKS timer ticks.  Interrupts must
-   be turned on. */
+/*
+ * Used to insert new thread in the list of blocked threads.
+ * Compares two elements by time to unblock and by priority if times are the same.
+ * Returns TRUE if element elem1 must be unblocked before element elem2
+ */
+int list_elem_blocked_thread_less(const struct list_elem* elem1, const struct list_elem* elem2)
+{
+	struct blocked_thread* blocked_thread1 = list_entry(elem1, struct blocked_thread, elem);
+	struct blocked_thread* blocked_thread2 = list_entry(elem2, struct blocked_thread, elem);
+
+	if(blocked_thread1->tick_unblock == blocked_thread2->tick_unblock)
+		return blocked_thread1->thread->priority > blocked_thread2->thread->priority;
+	else return blocked_thread1->tick_unblock < blocked_thread2->tick_unblock;
+}
+
+/* Sleeps for approximately TICKS timer ticks. */
 void
 timer_sleep (int64_t ticks) 
 {
-  int64_t start = timer_ticks ();
+  struct blocked_thread* new_blocked_thread = (struct blocked_thread*)malloc(sizeof(struct blocked_thread));
+  ASSERT(ticks > 0);
+  new_blocked_thread->tick_unblock = timer_ticks() + ticks;
+  new_blocked_thread->thread = thread_current();
 
-  ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks) 
-    thread_yield ();
+  intr_disable();
+
+  list_insert_ordered(&blocked_list, &(new_blocked_thread->elem), list_elem_blocked_thread_less, NULL);
+  thread_block();
+
+  // restore interrupt lvl?
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -171,6 +196,19 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
+  if(!list_empty(&blocked_list))
+  {
+	  struct list_elem* elem = list_begin(&blocked_list);
+	  struct blocked_thread* test_thread = list_entry(elem, struct blocked_thread, elem);
+
+	  while(elem != list_end(blocked_list) && test_thread->tick_unblock <= ticks)
+	  {
+		  thread_unclock(test_thread->thread);
+		  elem = list_remove(elem);
+		  free(test_thread);
+		  test_thread = list_entry(elem, struct blocked_thread, elem);
+	  }
+  }
   thread_tick ();
 }
 
