@@ -513,10 +513,14 @@ void thread_update_priority(struct thread* t)
 	struct list_elem* e;
 	for(e = list_begin(&t->held_locks); e != list_end(&t->held_locks); e = list_next(e))
 	{
-		int p = list_entry(list_front(&(list_entry(e, struct lock, elem)->semaphore.waiters)), struct thread, elem)->priority;
-		if(new_pri < p)
+		struct list* sema_waiters = &(list_entry(e, struct lock, elem)->semaphore.waiters);
+		if(!list_empty(sema_waiters))
 		{
-			new_pri = p;
+			int p = list_entry(list_front(sema_waiters), struct thread, elem)->priority;
+			if(new_pri < p)
+			{
+				new_pri = p;
+			}
 		}
 	}
 	t->priority = new_pri;
