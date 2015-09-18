@@ -92,6 +92,10 @@ struct thread
     /* changes project 1*/
     int real_pri;						/* Not donated priority of a thread */
     int64_t tick_unblock;				/* Tick after which should a thread must be waken up */
+
+    struct list held_locks;
+    struct lock* waited_lock;
+    //struct list waited_locks;
     /* end of changes project 1 */
 
     struct list_elem allelem;           /* List element for all threads list. */

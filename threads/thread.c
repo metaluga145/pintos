@@ -366,9 +366,12 @@ thread_set_priority (int new_priority)
 
 	old_level = intr_disable();
 	cur->real_pri = new_priority;
-	if (cur->priority < new_priority)
-		cur->priority = new_priority;
-
+	if(cur->waited_lock)
+	{
+		list_sort(&(cur->waited_lock->semaphore.waiters), thread_list_less, NULL);
+	}
+	thread_update_priority(curr);
+	intr_set_level(old_level);
 }
 
 /* Returns the current thread's priority. */
@@ -493,6 +496,8 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->real_pri = t->priority = priority;
+  list_init(&t->held_locks);
+  list_init(&t->waited_locks);
   t->magic = THREAD_MAGIC;
   list_push_back (&all_list, &t->allelem);
 }
@@ -501,6 +506,28 @@ init_thread (struct thread *t, const char *name, int priority)
 bool thread_list_less(const struct list_elem* elem1, const struct list_elem* elem2, void* aux)
 {
 	return list_entry(elem1, struct thread, elem)->priority > list_entry(elem2, struct thread, elem);
+}
+
+void thread_update_priority(struct thread* t)
+{
+	struct lock* l = t->waited_lock;
+	int new_pri = thread->real_pri;
+	struct list_elem* e;
+	for(e = list_begin(&t->held_locks); e != list_end(&t->held_locks); e = list_next(e))
+	{
+		int p = list_entry(list_front(&(list_entry(e, struct lock, elem)->semaphore.waiters)), struct thread, elem)->priority;
+		if(new_pri < p)
+		{
+			new_pri = p;
+		}
+	}
+	thread->priority = new_pri;
+
+	while(l && l->holder && lock->holder->priority < new_pri)
+	{
+		lock->holder->priority = new_pri;
+		l = lock->holder->waited_lock;
+	}
 }
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
    returns a pointer to the frame's base. */
