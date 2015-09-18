@@ -519,7 +519,7 @@ void thread_update_priority(struct thread* t)
 			new_pri = p;
 		}
 	}
-	thread->priority = new_pri;
+	t->priority = new_pri;
 
 	while(l && l->holder && l->holder->priority < new_pri)
 	{
