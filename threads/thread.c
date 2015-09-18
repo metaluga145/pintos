@@ -71,8 +71,6 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
-bool thread_list_less(const struct list_elem* elem1, const struct list_elem* elem2, void* aux);
-
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -370,7 +368,7 @@ thread_set_priority (int new_priority)
 	{
 		list_sort(&(cur->waited_lock->semaphore.waiters), thread_list_less, NULL);
 	}
-	thread_update_priority(curr);
+	thread_update_priority(cur);
 	intr_set_level(old_level);
 }
 
@@ -497,7 +495,7 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->real_pri = t->priority = priority;
   list_init(&t->held_locks);
-  list_init(&t->waited_locks);
+  t->waited_lock = NULL;
   t->magic = THREAD_MAGIC;
   list_push_back (&all_list, &t->allelem);
 }
@@ -505,13 +503,13 @@ init_thread (struct thread *t, const char *name, int priority)
 /* Compares two threads by currently set priority (it may be donated one) */
 bool thread_list_less(const struct list_elem* elem1, const struct list_elem* elem2, void* aux)
 {
-	return list_entry(elem1, struct thread, elem)->priority > list_entry(elem2, struct thread, elem);
+	return list_entry(elem1, struct thread, elem)->priority > list_entry(elem2, struct thread, elem)->priority;
 }
 
 void thread_update_priority(struct thread* t)
 {
 	struct lock* l = t->waited_lock;
-	int new_pri = thread->real_pri;
+	int new_pri = t->real_pri;
 	struct list_elem* e;
 	for(e = list_begin(&t->held_locks); e != list_end(&t->held_locks); e = list_next(e))
 	{
@@ -523,10 +521,10 @@ void thread_update_priority(struct thread* t)
 	}
 	thread->priority = new_pri;
 
-	while(l && l->holder && lock->holder->priority < new_pri)
+	while(l && l->holder && l->holder->priority < new_pri)
 	{
-		lock->holder->priority = new_pri;
-		l = lock->holder->waited_lock;
+		l->holder->priority = new_pri;
+		l = l->holder->waited_lock;
 	}
 }
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
