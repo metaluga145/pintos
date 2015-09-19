@@ -109,7 +109,8 @@ bool list_elem_blocked_thread_less(const struct list_elem* elem1, const struct l
 void
 timer_sleep (int64_t ticks) 
 {
-  ASSERT(ticks >= 0);
+  if(ticks > 0)
+{
   struct thread* new_blocked_thread = thread_current();
   new_blocked_thread->tick_unblock = timer_ticks() + ticks;
 
@@ -117,7 +118,7 @@ timer_sleep (int64_t ticks)
 
   list_insert_ordered(&blocked_list, &(new_blocked_thread->elem), list_elem_blocked_thread_less, NULL);
   thread_block();
-
+}
   // restore interrupt lvl?
 }
 

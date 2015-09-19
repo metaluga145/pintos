@@ -333,12 +333,16 @@ void thread_try_yield(void)
 {
 	struct thread* cur = thread_current();
 	struct thread* first;
-
 	if(!list_empty(&ready_list))
+	{
 		first = list_entry(list_front(&ready_list), struct thread, elem);
 
-	if (cur->priority < first->priority)
-		thread_yield();
+
+		if (cur->priority < first->priority)
+		{
+			thread_yield();
+		}
+	}
 }
 
 /* Invoke function 'func' on all threads, passing along 'aux'.
@@ -373,7 +377,6 @@ thread_set_priority (int new_priority)
 	ASSERT(new_priority <= PRI_MAX && new_priority >= PRI_MIN);
 	struct thread *cur = thread_current ();
 	enum intr_level old_level;
-
 	old_level = intr_disable();
 	cur->real_pri = new_priority;
 	thread_update_priority(cur);

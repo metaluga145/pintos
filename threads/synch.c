@@ -202,7 +202,6 @@ lock_acquire (struct lock *lock)
   struct thread* curr = thread_current();
   curr->waited_lock = lock;
   thread_update_priority(curr);
-
   sema_down (&lock->semaphore);
   lock->holder = curr;
   curr->waited_lock = NULL;
