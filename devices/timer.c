@@ -109,7 +109,7 @@ bool list_elem_blocked_thread_less(const struct list_elem* elem1, const struct l
 void
 timer_sleep (int64_t ticks) 
 {
-  ASSERT(ticks > 0);
+  ASSERT(ticks >= 0);
   struct thread* new_blocked_thread = thread_current();
   new_blocked_thread->tick_unblock = timer_ticks() + ticks;
 

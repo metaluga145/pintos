@@ -86,9 +86,10 @@ test_priority_fifo (void)
 static void 
 simple_thread_func (void *data_) 
 {
+  printf("thread runs\n");
   struct simple_thread_data *data = data_;
   int i;
-  
+
   for (i = 0; i < ITER_CNT; i++) 
     {
       lock_acquire (data->lock);

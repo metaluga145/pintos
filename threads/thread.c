@@ -364,11 +364,12 @@ thread_set_priority (int new_priority)
 
 	old_level = intr_disable();
 	cur->real_pri = new_priority;
+	thread_update_priority(cur);
 	if(cur->waited_lock)
 	{
 		list_sort(&(cur->waited_lock->semaphore.waiters), thread_list_less, NULL);
 	}
-	thread_update_priority(cur);
+	thread_yield();
 	intr_set_level(old_level);
 }
 
