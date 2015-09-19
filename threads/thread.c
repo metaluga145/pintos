@@ -334,8 +334,8 @@ void thread_try_yield(void)
 	struct thread* cur = thread_current();
 	struct thread* first;
 
-	if(!is_empty(&ready_list))
-		first = list_entry(list_front(&ready_list));
+	if(!list_empty(&ready_list))
+		first = list_entry(list_front(&ready_list), struct thread, elem);
 
 	if (cur->priority < first->priority)
 		thread_yield();
