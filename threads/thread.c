@@ -329,6 +329,18 @@ thread_yield (void)
   intr_set_level (old_level);
 }
 
+void thread_try_yield(void)
+{
+	struct thread* cur = thread_current();
+	struct thread* first;
+
+	if(!is_empty(&ready_list))
+		first = list_entry(list_front(&ready_list));
+
+	if (cur->priority < first->priority)
+		thread_yield();
+}
+
 /* Invoke function 'func' on all threads, passing along 'aux'.
    This function must be called with interrupts off. */
 void
@@ -369,7 +381,7 @@ thread_set_priority (int new_priority)
 	{
 		list_sort(&(cur->waited_lock->semaphore.waiters), thread_list_less, NULL);
 	}
-	thread_yield();
+	thread_try_yield();
 	intr_set_level(old_level);
 }
 
