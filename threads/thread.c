@@ -544,8 +544,11 @@ void thread_update_priority(struct thread* t)
 	while(l && l->holder && l->holder->priority < new_pri)
 	{
 		l->holder->priority = new_pri;
+		if(l->holder->waited_lock)
+			list_sort(&(l->holder->waited_lock->semaphore.waiters), thread_list_less, NULL);
 		l = l->holder->waited_lock;
 	}
+	
 }
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
    returns a pointer to the frame's base. */
