@@ -71,7 +71,7 @@ sema_down (struct semaphore *sema)
   while (sema->value == 0) 
     {
 	  /* if semaphore is held by another thread, block the current thread */
-      list_insert_ordered (&sema->waiters, &(thread_current()->elem), thread_list_less, NULL);
+      list_insert_ordered (&sema->waiters, &(thread_current()->elem), thread_pri_cmp, NULL);
       thread_block ();
     }
   sema->value--;
@@ -120,7 +120,7 @@ sema_up (struct semaphore *sema)
   if (!list_empty (&sema->waiters)) 
   {
 	  /* sort threads before waking up (necessary for semaphores, but waste of time for locks */
-	  list_sort(&sema->waiters, thread_list_less, NULL);
+	  list_sort(&sema->waiters, thread_pri_cmp, NULL);
 	  thread_unblock (list_entry (list_pop_front (&sema->waiters),
                                 struct thread, elem));
   }
