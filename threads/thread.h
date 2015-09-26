@@ -117,7 +117,7 @@ struct thread
    Controlled by kernel command-line option "-o mlfqs". */
 extern bool thread_mlfqs;
 /* New functions prototypes */
-bool thread_list_less(const struct list_elem* , const struct list_elem*, void*);
+bool thread_pri_cmp(const struct list_elem* , const struct list_elem*, void*);
 void thread_update_priority(struct thread*);
 
 void thread_init (void);
