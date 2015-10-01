@@ -17,6 +17,7 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/synch.h"
 
 struct args_tmp
 {
@@ -57,7 +58,7 @@ process_execute (const char *cmdline)
 	  palloc_free_page (fn_copy);
 	  return TID_ERROR;
   }
-  struct args_tmp* args = malloc(sizeof(args_tmp));
+  struct args_tmp* args; args_tmp = malloc(sizeof(args_tmp));
   args->argc = 0;
   args->argv = malloc(MAX_ARGS_SIZE*sizeof(char*));
   sema_init(&args->loading_block, 0);
