@@ -18,12 +18,6 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 
-static thread_func start_process NO_RETURN;
-static bool load (struct args_tmp* args, void (**eip) (void), void **esp);
-
-#define MAX_ARGS 128
-#define MAX_LINE_SIZE 4000
-
 struct args_tmp
 {
 	size_t argc;
@@ -32,6 +26,13 @@ struct args_tmp
 	bool loaded;
 	size_t total_length;
 };
+
+static thread_func start_process NO_RETURN;
+static bool load (struct args_tmp* args, void (**eip) (void), void **esp);
+
+#define MAX_ARGS 128
+#define MAX_LINE_SIZE 4000
+
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
