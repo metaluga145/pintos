@@ -58,9 +58,9 @@ process_execute (const char *cmdline)
 	  palloc_free_page (fn_copy);
 	  return TID_ERROR;
   }
-  struct args_tmp* args; args_tmp = malloc(sizeof(args_tmp));
+  struct args_tmp* args = malloc(sizeof(struct args_tmp));
   args->argc = 0;
-  args->argv = malloc(MAX_ARGS_SIZE*sizeof(char*));
+  args->argv = malloc(MAX_ARGS*sizeof(char*));
   sema_init(&args->loading_block, 0);
   agrs->loaded = false;
   args->total_legnth = 0;
