@@ -63,8 +63,8 @@ process_execute (const char *cmdline)
   args->argc = 0;
   args->argv = malloc(MAX_ARGS*sizeof(char*));
   sema_init(&args->loading_block, 0);
-  agrs->loaded = false;
-  args->total_legnth = 0;
+  args->loaded = false;
+  args->total_length = 0;
   /* parse command line */
   char* token, *save_ptr;
   /* modify to return length - increased performance */
@@ -89,7 +89,7 @@ process_execute (const char *cmdline)
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (args->argv[0], PRI_DEFAULT, start_process, args);
   /* waiting while loading is finished */
-  sema_up(args->loading_block);
+  sema_up(&args->loading_block);
 
   label: free;
   if(!args->loaded)
@@ -508,7 +508,7 @@ setup_stack (void **esp, struct args_tmp* args)
     	  {
     		  int len = strlen(args->argv[i])+1;
     		  esp_ -= len;
-    		  memcpy(len, args->argv[i], len);
+    		  memcpy(esp_, args->argv[i], len);
     		  --esp_argv;
     		  *esp_argv = esp_;
     	  }
