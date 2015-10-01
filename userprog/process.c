@@ -84,15 +84,14 @@ process_execute (const char *cmdline)
   // calculate total length accounting for argv ptr, argc and return addr on the stack
   size_t full_length = args->total_length + sizeof(char*)*(args->argc + 2) + sizeof(int);
   if(full_length > PGSIZE)
-	  goto free;
+	  goto free_all;
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (args->argv[0], PRI_DEFAULT, start_process, args);
   /* waiting while loading is finished */
   sema_up(&args->loading_block);
 
-  label: free;
-  if(!args->loaded)
+  free_all: if(!args->loaded)
 	  tid = TID_ERROR;
   /* deallocate memory */
   palloc_free_page (fn_copy);
@@ -123,7 +122,7 @@ start_process (void *args_)
 
   /* If load failed, quit. */
   args->loaded = success;
-  sema_up(args->loading_block);
+  sema_up(&args->loading_block);
 
   if (!success) 
     thread_exit ();
