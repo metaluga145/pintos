@@ -72,9 +72,12 @@ process_execute (const char *cmdline)
 		  token != NULL && args->argc < MAX_ARGS;
 		  token = strtok_r (NULL, " ", &save_ptr))
   {
-	  args->argv[args->argc] = token;
+	  int len = (*save_ptr != '\0' || *(save_ptr - 1) == '\0') ? (save_ptr - token) : (save_ptr - token + 1);
+	  //args->argv[args->argc] = token;
+	  args->argv[args->argc] = malloc(len);
+	  strlcpy(args->argv[args->argc], token, len);
 	  args->argc++;
-	  args->total_length += (*save_ptr != '\0' || *(save_ptr - 1) == '\0') ? (save_ptr - token) : (save_ptr - token + 1);
+	  //args->total_length += (*save_ptr != '\0' || *(save_ptr - 1) == '\0') ? (save_ptr - token) : (save_ptr - token + 1);
   }
 
   /*
