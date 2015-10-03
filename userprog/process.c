@@ -87,6 +87,7 @@ process_execute (const char *cmdline)
 	  goto free_all;
 
   /* Create a new thread to execute FILE_NAME. */
+
   tid = thread_create (args->argv[0], PRI_DEFAULT, start_process, args);
   /* waiting while loading is finished */
   sema_down(&args->loading_block);
@@ -514,7 +515,7 @@ setup_stack (void **esp, struct args_tmp* args)
     	  esp_ = (char*)esp_argv;
     	  --esp_argv;
     	  *esp_argv = esp_;
-    	  esp_argv -= sizeof(int);
+    	  esp_argv -= sizeof(int)/sizeof(char**);
     	  memcpy(esp_argv, &(args->argc), sizeof(int));
     	  --esp_argv;
     	  *esp = esp_argv;

@@ -18,6 +18,7 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f)
 {
+
 	int syscalln;
 	memcpy(&syscalln, f->esp, 4);
 	switch(syscalln)
@@ -25,7 +26,6 @@ syscall_handler (struct intr_frame *f)
 	case SYS_WRITE: sys_write(f); break;
 	default:
 	{
-		printf ("system call!\n");
 		thread_exit ();
 	}
 	}
@@ -39,10 +39,9 @@ static void sys_write(struct intr_frame *f)
 	//test argument passing. write to console
 	const char* buf;
 	size_t size;
-
 	memcpy(&buf, f->esp + 8, 4);
 	memcpy(&size, f->esp + 12, 4);
 
-	putbuf(buffer, size);
+	putbuf(buf, size);
 	f->eax = size;
 }
