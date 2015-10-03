@@ -40,9 +40,9 @@ static void sys_write(struct intr_frame *f)
 	const char* buf;
 	size_t size;
 
-	memcpy(&buffer, f->esp + 8, 4);
+	memcpy(&buf, f->esp + 8, 4);
 	memcpy(&size, f->esp + 12, 4);
 
-	putbuf(buffer, asize);
-	f->eax = asize;
+	putbuf(buffer, size);
+	f->eax = size;
 }
