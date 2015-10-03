@@ -87,6 +87,7 @@ process_execute (const char *cmdline)
 	  goto free_all;
 
   /* Create a new thread to execute FILE_NAME. */
+  printf("name? = %s\n", args->argv[0]);
   tid = thread_create (args->argv[0], PRI_DEFAULT, start_process, args);
   /* waiting while loading is finished */
   sema_up(&args->loading_block);
@@ -270,6 +271,7 @@ bool
 load (struct args_tmp* args, void (**eip) (void), void **esp)
 {
 	const char *file_name = args->argv[0];
+	printf("file_name = %s\n", args->argv[0]);
   struct thread *t = thread_current ();
   struct Elf32_Ehdr ehdr;
   struct file *file = NULL;
