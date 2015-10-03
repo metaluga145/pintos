@@ -3,6 +3,8 @@
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include <lib/kernel/console.h>
+#include <string.h>
 
 static void syscall_handler (struct intr_frame *);
 static void sys_write(struct intr_frame *f);
