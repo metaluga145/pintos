@@ -90,7 +90,7 @@ process_execute (const char *cmdline)
   printf("name? = %s\n", args->argv[0]);
   tid = thread_create (args->argv[0], PRI_DEFAULT, start_process, args);
   /* waiting while loading is finished */
-  sema_up(&args->loading_block);
+  sema_down(&args->loading_block);
 
   free_all: if(!args->loaded)
 	  tid = TID_ERROR;
