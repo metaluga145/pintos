@@ -90,7 +90,7 @@ process_execute (const char *cmdline)
   tid = thread_create (args->argv[0], PRI_DEFAULT, start_process, args);
   /* waiting while loading is finished */
   sema_up(&args->loading_block);
-
+	printf("create_process tid = %i\n", tid);
   free_all: if(!args->loaded)
 	  tid = TID_ERROR;
   /* deallocate memory */
@@ -100,7 +100,7 @@ process_execute (const char *cmdline)
   free(args);
 
   //if (tid != TID_ERROR)
-
+	printf("create_process tid = %i\n", tid);
   return tid;
 }
 
@@ -119,7 +119,7 @@ start_process (void *args_)
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (args, &if_.eip, &if_.esp);
-
+	printf("success = %i\n", success);
   /* If load failed, quit. */
   args->loaded = success;
   sema_up(&args->loading_block);
@@ -375,6 +375,7 @@ load (struct args_tmp* args, void (**eip) (void), void **esp)
  done:
   /* We arrive here whether the load is successful or not. */
   file_close (file);
+printf("success = %i\n", (int)(success));
   return success;
 }
 

@@ -92,34 +92,42 @@ timer_elapsed (int64_t then)
 
 /*
  * Used to insert new thread in the list of blocked threads.
- * Compares two elements by time to unblock and by priority if times are the same.
+ * Compares two elements by time to wake up and by priority if times are the same.
  * Returns TRUE if element elem1 must be unblocked before element elem2
  */
-bool list_elem_blocked_thread_less(const struct list_elem* elem1, const struct list_elem* elem2, void* aux)
+bool thread_time_pri_cmp(const struct list_elem* elem1, const struct list_elem* elem2, void* aux)
 {
 	struct thread* blocked_thread1 = list_entry(elem1, struct thread, elem);
 	struct thread* blocked_thread2 = list_entry(elem2, struct thread, elem);
 
 	if(blocked_thread1->tick_unblock == blocked_thread2->tick_unblock)
-		return blocked_thread1->priority > blocked_thread2->priority;
-	else return blocked_thread1->tick_unblock < blocked_thread2->tick_unblock;
+		return blocked_thread1->priority < blocked_thread2->priority;
+	return blocked_thread1->tick_unblock < blocked_thread2->tick_unblock;
 }
 
-/* Sleeps for approximately TICKS timer ticks. */
+/* Blocks current thread until TICKS ticks elapsed. */
 void
 timer_sleep (int64_t ticks) 
 {
-  if(ticks > 0)
-{
-  struct thread* new_blocked_thread = thread_current();
-  new_blocked_thread->tick_unblock = timer_ticks() + ticks;
+	/*
+	 * actually, I'm not sure whether we have to restore interrupt level,
+	 * because it will be set to 'ON' after the thread is waken up.
+	 * But for the God's sake, I will restore it :)
+	 */
+	enum intr_level old_level;
+	if(ticks > 0)
+	{
+		/* get the currently running thread and calculate time to wake up. */
+		struct thread* new_blocked_thread = thread_current();
+		new_blocked_thread->tick_unblock = timer_ticks() + ticks;
 
-  intr_disable();
-
-  list_insert_ordered(&blocked_list, &(new_blocked_thread->elem), list_elem_blocked_thread_less, NULL);
-  thread_block();
-}
-  // restore interrupt lvl?
+		old_level = intr_disable();
+		/* add the thread into the list of sleeping threads and block it. */
+		list_insert_ordered(&blocked_list, &(new_blocked_thread->elem), thread_time_pri_cmp, NULL);
+		thread_block();
+		/* restore interrupt lvl. I don't know if I really need it, but let it be. */
+		intr_set_level (old_level);
+	}
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -197,11 +205,12 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
+  /* check if some threads are waiting to be waked up. */
   if(!list_empty(&blocked_list))
   {
 	  struct list_elem* elem = list_begin(&blocked_list);
 	  struct thread* test_thread = list_entry(elem, struct thread, elem);
-
+	  /* unblock all threads for which timer has elapsed already */
 	  while(!list_empty(&blocked_list) && test_thread->tick_unblock <= ticks)
 	  {
 		  elem = list_remove(elem);
@@ -256,7 +265,6 @@ real_time_sleep (int64_t num, int32_t denom)
      1 s / TIMER_FREQ ticks
   */
   int64_t ticks = num * TIMER_FREQ / denom;
-
   ASSERT (intr_get_level () == INTR_ON);
   if (ticks > 0)
     {
