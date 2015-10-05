@@ -88,8 +88,16 @@ process_execute (const char *cmdline)
   args->cur_proc = child;	// child's thread should have pointer to its process instance
 
   struct thread* parent = thread_current();
-  child->pthread = parent;
-  lock_acquire(&parent->proc->list_lock);	// avoid trying to modify exit status before stored on the list of children
+  /*
+   * the very first process does not have a parent
+   */
+  if (parent->proc)
+  {
+	  child->pthread = parent;
+	  lock_acquire(&parent->proc->list_lock);	// avoid trying to modify exit status before stored on the list of children
+  }
+  else
+	  child->pthread = NULL;
 //--------------------------------------------------------------------------------
   /*
    * check if everything can fit in one page
@@ -118,8 +126,11 @@ process_execute (const char *cmdline)
   {
 	  child->pid = tid;
 	  sema_init(&child->wait, 0);
-	  list_push_back(&parent->proc->children, &child->elem);
-	  lock_release(&parent->proc->list_lock);
+	  if (parent->proc)
+	  {
+		  list_push_back(&parent->proc->children, &child->elem);
+		  lock_release(&parent->proc->list_lock);
+	  }
   }
   return tid;
 }
