@@ -14,10 +14,11 @@ static void syscall_handler (struct intr_frame *);
 static int sys_write(unsigned int fd, const char *buf, size_t count);
 static void sys_exit(int code);
 
-
+static int get_user(const uint8_t* uaddr);
 static int get_int_32(const void* ptr_);
 static void exit(int code)
 {
+	printf( "%s: exit(%d)\n", thread_name(), code);
 	sys_exit(code);
 }
 
@@ -30,7 +31,6 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f)
 {
-
 	int syscalln = get_int_32(f->esp);
 	switch(syscalln)
 	{
@@ -40,7 +40,7 @@ syscall_handler (struct intr_frame *f)
 		break;
 		default:
 		{
-			thread_exit ();
+			exit(0);
 		}
 	}
 }
@@ -48,7 +48,7 @@ syscall_handler (struct intr_frame *f)
 
 static int sys_write(unsigned int fd, const char *buf, size_t count)
 {
-	if(!buf || buf+count-1 >= PHYS_BASE || get_int_32(buf) == -1) exit(-1);
+	if(!buf || buf+count-1 >= PHYS_BASE || get_user(buf) == -1) exit(-1);
 	switch(fd)
 	{
 		case 0: exit(-1);
@@ -91,7 +91,7 @@ static int get_int_32(const void* ptr_)
 	int i;
 	for (i = 0; i < 4; ++i)
 	{
-		if (get_user((uint32_t*)(ptr+i)) == -1)
+		if (get_user(ptr+i) == -1)
 			exit(-1);
 	}
 	return *((int *)ptr);
