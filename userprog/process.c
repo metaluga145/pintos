@@ -24,9 +24,10 @@ struct args_tmp
 {
 	size_t argc;
 	char** argv;
+	size_t total_length;
 	struct semaphore loading_block;
 	bool loaded;
-	size_t total_length;
+	struct process* cur_proc;
 };
 
 static thread_func start_process NO_RETURN;
@@ -59,12 +60,14 @@ process_execute (const char *cmdline)
 	  palloc_free_page (fn_copy);
 	  return TID_ERROR;
   }
+//---------------------------------------------------------------------------
   struct args_tmp* args = malloc(sizeof(struct args_tmp));
   args->argc = 0;
   args->argv = malloc(MAX_ARGS*sizeof(char*));
   sema_init(&args->loading_block, 0);
   args->loaded = false;
   args->total_length = 0;
+//-------------------------------------------------------------------------------
   /* parse command line */
   char* token, *save_ptr;
   /* modify to return length - increased performance */
@@ -77,6 +80,17 @@ process_execute (const char *cmdline)
 	  args->total_length += (*save_ptr != '\0' || *(save_ptr - 1) == '\0') ? (save_ptr - token) : (save_ptr - token + 1);
   }
 
+//--------------------------------------------------------------------------------
+  struct process* child = malloc(sizeof(struct process));
+  list_init(&child->children);
+  lock_init(&child->list_lock);
+
+  args->cur_proc = child;	// child's thread should have pointer to its process instance
+
+  struct thread* parent = thread_current();
+  child->pthread = parent;
+  lock_acquire(&parent->proc->list_lock);	// avoid trying to modify exit status before stored on the list of children
+//--------------------------------------------------------------------------------
   /*
    * check if everything can fit in one page
    */
@@ -85,7 +99,7 @@ process_execute (const char *cmdline)
   size_t full_length = args->total_length + sizeof(char*)*(args->argc + 2) + sizeof(int);
   if(full_length > PGSIZE)
 	  goto free_all;
-
+//---------------------------------------------------------------------------------
   /* Create a new thread to execute FILE_NAME. */
 
   tid = thread_create (args->argv[0], PRI_DEFAULT, start_process, args);
@@ -100,8 +114,13 @@ process_execute (const char *cmdline)
   free(args->argv);
   free(args);
 
-  //if (tid != TID_ERROR)
-
+  if (tid != TID_ERROR)
+  {
+	  child->pid = tid;
+	  sema_init(&child->wait, 0);
+	  list_push_back(&parent->proc->children, &child->elem);
+	  lock_release(&parent->proc->list_lock);
+  }
   return tid;
 }
 
@@ -123,6 +142,7 @@ start_process (void *args_)
 
   /* If load failed, quit. */
   args->loaded = success;
+  thread_current()->proc = args->cur_proc;
   sema_up(&args->loading_block);
 
   if (!success) 
