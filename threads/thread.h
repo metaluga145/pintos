@@ -4,7 +4,9 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
-#include "userprog/process.h"
+//#include "userprog/process.h"
+
+struct process;
 
 /* States in a thread's life cycle. */
 enum thread_status
