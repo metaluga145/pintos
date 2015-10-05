@@ -132,6 +132,8 @@ process_execute (const char *cmdline)
 		  lock_release(&parent->proc->list_lock);
 	  }
   }
+  else
+	  free(child);
   return tid;
 }
 
