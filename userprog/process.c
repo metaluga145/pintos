@@ -20,7 +20,7 @@
 #include "threads/synch.h"
 #include "threads/malloc.h"
 
-struct args_tmp
+static struct args_tmp
 {
 	size_t argc;
 	char** argv;
@@ -30,12 +30,21 @@ struct args_tmp
 	struct process* cur_proc;
 };
 
+static struct list threads_children;
+static struct lock list_lock;
+
 static thread_func start_process NO_RETURN;
 static bool load (struct args_tmp* args, void (**eip) (void), void **esp);
 
 #define MAX_ARGS 128
 #define MAX_LINE_SIZE 4000
 
+
+void process_init(void)
+{
+	list_init(&threads_children);
+	lock_init(&list_lock);
+}
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -96,13 +105,21 @@ process_execute (const char *cmdline)
   /*
    * the very first process does not have a parent
    */
+  struct lock* parents_lock;
+  struct list* parents_list;
   if (parent->proc)
   {
 	  child->parent_lock = parent->proc->my_lock;
-	  lock_acquire(&parent->proc->my_lock->list_lock);	// avoid trying to modify exit status before stored on the list of children
+	  parents_lock = &parent->proc->my_lock->list_lock;	// avoid trying to modify exit status before stored on the list of children
+	  parents_list = &parent->proc->children;
   }
   else
+  {
 	  child->parent_lock = NULL;
+	  parents_lock = &list_lock;
+	  parents_list = process_children;
+  }
+  lock_acquire(parents_lock);
 //--------------------------------------------------------------------------------
   /*
    * check if everything can fit in one page
@@ -130,17 +147,14 @@ process_execute (const char *cmdline)
   if (tid != TID_ERROR)
   {
 	  child->pid = tid;
-	  if (parent->proc)
-	  {
-		  list_push_back(&parent->proc->children, &child->elem);
-		  lock_release(&parent->proc->my_lock->list_lock);
-	  }
+	  list_push_back(parents_list, &child->elem);
   }
   else
   {
 	  free(child->my_lock);
 	  free(child);
   }
+  lock_release(parents_lock);
   return tid;
 }
 
@@ -192,31 +206,38 @@ process_wait (tid_t child_tid)
 {
 	/* acquire the lock for the list */
 	struct process* cur_proc = thread_current()->proc;
-if (!cur_proc) return -1;
+	struct lock* parents_lock;
+	struct list* parents_list;
+	if (cur_proc)
+	{
+		parents_lock = &cur_proc->my_lock->list_lock;
+		parents_list = &cur_proc->children
+	}
+
 	struct process* child;
-	lock_acquire(&cur_proc->my_lock->list_lock);
+	lock_acquire(parents_lock);
 	/* find child */
 	struct list_elem* e;
-	for(e = list_begin(&cur_proc->children);
-			e != list_end(&cur_proc->children);)
+	for(e = list_begin(parents_list);
+			e != list_end(parents_list);)
 	{
 		child = list_entry(e, struct process, elem);
 		if(child->pid == child_tid)
 			break;
 	}
-	if (e == list_end(&cur_proc->children))
+	if (e == list_end(parents_list))
 	{
-		lock_release(&cur_proc->my_lock->list_lock);
+		lock_release(parents_lock);
 		return -1;
 	}
-	lock_release(&cur_proc->my_lock->list_lock);
+	lock_release(parents_lock);
 	/* wait child to exit */
 	sema_down(&child->wait);
 	/* when child exited, get his exit code, remove from the list and free memory */
-	lock_acquire(&cur_proc->my_lock->list_lock);
+	lock_acquire(parents_lock);
 	int ret = child->exit_status;
 	list_remove(&child->elem);
-	lock_release(&cur_proc->my_lock->list_lock);
+	lock_release(parents_lock);
 	free(child);
 
 	// pass exit status
@@ -280,7 +301,14 @@ process_exit (void)
 	  lock_release(&lock->list_lock);
 	  if(!lock_is_needed) free(lock);
 	}
-	else free(cur_proc);
+	else
+	{
+		/* if process was spawned by initial thread */
+		lock_acquire(&list_lock);
+		cur_proc->exited = true;
+		sema_up(&cur_proc->wait);
+		release(&list_lock);
+	}
   }
 
   /* Destroy the current process's page directory and switch back
