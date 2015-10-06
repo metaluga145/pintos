@@ -113,8 +113,8 @@ main (void)
 #ifdef USERPROG
   exception_init ();
   syscall_init ();
+  process_init();
 #endif
-
   /* Start thread scheduler and enable interrupts. */
   thread_start ();
   serial_init_queue ();

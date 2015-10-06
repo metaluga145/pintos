@@ -117,7 +117,7 @@ process_execute (const char *cmdline)
   {
 	  child->parent_lock = NULL;
 	  parents_lock = &list_lock;
-	  parents_list = process_children;
+	  parents_list = &threads_children;
   }
   lock_acquire(parents_lock);
 //--------------------------------------------------------------------------------
@@ -211,7 +211,12 @@ process_wait (tid_t child_tid)
 	if (cur_proc)
 	{
 		parents_lock = &cur_proc->my_lock->list_lock;
-		parents_list = &cur_proc->children
+		parents_list = &cur_proc->children;
+	}
+	else
+	{
+		parents_lock = &list_lock;
+		parents_list = &threads_children;
 	}
 
 	struct process* child;
@@ -307,7 +312,7 @@ process_exit (void)
 		lock_acquire(&list_lock);
 		cur_proc->exited = true;
 		sema_up(&cur_proc->wait);
-		release(&list_lock);
+		lock_release(&list_lock);
 	}
   }
 
