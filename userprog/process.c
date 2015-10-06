@@ -124,7 +124,6 @@ process_execute (const char *cmdline)
 
   /* deallocate memory */
   palloc_free_page (fn_copy);
-  size_t i = 0;
   free(args->argv);
   free(args);
 
@@ -192,10 +191,12 @@ int
 process_wait (tid_t child_tid)
 {
 	/* acquire the lock for the list */
-	struct process* cur_proc = current_thread()->proc;
+	struct process* cur_proc = thread_current()->proc;
+if (!cur_proc) return -1;
 	struct process* child;
 	lock_acquire(&cur_proc->my_lock->list_lock);
 	/* find child */
+	struct list_elem* e;
 	for(e = list_begin(&cur_proc->children);
 			e != list_end(&cur_proc->children);)
 	{
@@ -261,11 +262,13 @@ process_exit (void)
 
 	  /* ---- PARENT SECTION ---- */
 	  /* next we will modify critical section in the list, lock should be acquired */
+	if (cur_proc->parent_lock)
+	{
 	  lock_acquire(&cur_proc->parent_lock->list_lock);
 	  cur_proc->parent_lock->count--;
 	  struct parent_list_guard* lock = cur_proc->parent_lock; /* to free lock if necessary */
 	  lock_is_needed = cur_proc->parent_lock->count;
-	  if(cur_proc->cur_proc->parent_alive)
+	  if(cur_proc->parent_lock->parent_alive)
 	  {
 		  /* if parent is alive, change status and release resources */
 		  cur_proc->exited = true;
@@ -276,6 +279,8 @@ process_exit (void)
 
 	  lock_release(&lock->list_lock);
 	  if(!lock_is_needed) free(lock);
+	}
+	else free(cur_proc);
   }
 
   /* Destroy the current process's page directory and switch back
