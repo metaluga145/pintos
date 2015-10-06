@@ -13,7 +13,7 @@
 static void syscall_handler (struct intr_frame *);
 static int sys_write(unsigned, const char*, size_t);
 static void sys_exit(int);
-static int sys_exec(const char*)
+static int sys_exec(const char*);
 static int sys_wait(tid_t);
 
 static int get_user(const uint8_t*);

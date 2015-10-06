@@ -148,6 +148,7 @@ process_execute (const char *cmdline)
   {
 	  child->pid = tid;
 	  list_push_back(parents_list, &child->elem);
+	if(parent->proc) parent->proc->my_lock->count++;
   }
   else
   {
@@ -236,8 +237,10 @@ process_wait (tid_t child_tid)
 		return -1;
 	}
 	lock_release(parents_lock);
+
 	/* wait child to exit */
 	sema_down(&child->wait);
+
 	/* when child exited, get his exit code, remove from the list and free memory */
 	lock_acquire(parents_lock);
 	int ret = child->exit_status;
