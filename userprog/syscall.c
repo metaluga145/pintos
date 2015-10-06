@@ -11,12 +11,13 @@
 
 
 static void syscall_handler (struct intr_frame *);
-static int sys_write(unsigned int fd, const char *buf, size_t count);
-static void sys_exit(int code);
-static int sys_wait(tid_t tid);
+static int sys_write(unsigned, const char*, size_t);
+static void sys_exit(int);
+static int sys_exec(const char*)
+static int sys_wait(tid_t);
 
-static int get_user(const uint8_t* uaddr);
-static int get_int_32(const void* ptr_);
+static int get_user(const uint8_t*);
+static int get_int_32(const void*);
 static void exit(int code)
 {
 	sys_exit(code);
@@ -36,6 +37,8 @@ syscall_handler (struct intr_frame *f)
 	{
 		case SYS_EXIT: sys_exit(get_int_32(f->esp+4));
 						NOT_REACHED();
+		case SYS_EXEC: f->eax = sys_exec((const char*)get_int_32(f->esp+4));
+			break;
 		case SYS_WAIT: f->eax = sys_wait((tid_t)get_int_32(f->esp+4));
 			break;
 		case SYS_WRITE: f->eax = sys_write(get_int_32(f->esp+4),
@@ -44,7 +47,7 @@ syscall_handler (struct intr_frame *f)
 			break;
 		default:
 		{
-			exit(0);
+			exit(-1);
 		}
 	}
 }
@@ -55,6 +58,12 @@ static void sys_exit(int code)
 	printf( "%s: exit(%d)\n", thread_name(), code);
 	thread_current()->proc->exit_status = code;
 	thread_exit ();
+}
+
+static int sys_exec(const char* cmd)
+{
+	if(cmd >= PHYS_BASE || get_user(cmd) == -1) exit(-1);
+	return process_execute(cmd);
 }
 
 static int sys_wait(tid_t tid)
