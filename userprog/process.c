@@ -83,7 +83,12 @@ process_execute (const char *cmdline)
 //--------------------------------------------------------------------------------
   struct process* child = malloc(sizeof(struct process));
   list_init(&child->children);
-  lock_init(&child->list_lock);
+  child->my_lock = malloc(sizeof(struct parent_list_guard));
+  lock_init(&child->my_lock->list_lock);
+  child->my_lock->count = 1;
+  child->my_lock->parent_alive = true;
+  child->exited = false;
+  sema_init(&child->wait, 0);
 
   args->cur_proc = child;	// child's thread should have pointer to its process instance
 
@@ -93,11 +98,11 @@ process_execute (const char *cmdline)
    */
   if (parent->proc)
   {
-	  child->pthread = parent;
-	  lock_acquire(&parent->proc->list_lock);	// avoid trying to modify exit status before stored on the list of children
+	  child->parent_lock = parent->proc->my_lock;
+	  lock_acquire(&parent->proc->my_lock->list_lock);	// avoid trying to modify exit status before stored on the list of children
   }
   else
-	  child->pthread = NULL;
+	  child->parent_lock = NULL;
 //--------------------------------------------------------------------------------
   /*
    * check if everything can fit in one page
@@ -109,13 +114,14 @@ process_execute (const char *cmdline)
 	  goto free_all;
 //---------------------------------------------------------------------------------
   /* Create a new thread to execute FILE_NAME. */
-
   tid = thread_create (args->argv[0], PRI_DEFAULT, start_process, args);
+
   /* waiting while loading is finished */
   sema_down(&args->loading_block);
 
   free_all: if(!args->loaded)
 	  tid = TID_ERROR;
+
   /* deallocate memory */
   palloc_free_page (fn_copy);
   size_t i = 0;
@@ -125,15 +131,17 @@ process_execute (const char *cmdline)
   if (tid != TID_ERROR)
   {
 	  child->pid = tid;
-	  sema_init(&child->wait, 0);
 	  if (parent->proc)
 	  {
 		  list_push_back(&parent->proc->children, &child->elem);
-		  lock_release(&parent->proc->list_lock);
+		  lock_release(&parent->proc->my_lock->list_lock);
 	  }
   }
   else
+  {
+	  free(child->my_lock);
 	  free(child);
+  }
   return tid;
 }
 
@@ -181,9 +189,37 @@ start_process (void *args_)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid)
 {
-  return -1;
+	/* acquire the lock for the list */
+	struct process* cur_proc = current_thread()->proc;
+	struct process* child;
+	lock_acquire(&cur_proc->my_lock->list_lock);
+	/* find child */
+	for(e = list_begin(&cur_proc->children);
+			e != list_end(&cur_proc->children);)
+	{
+		child = list_entry(e, struct process, elem);
+		if(child->pid == child_tid)
+			break;
+	}
+	if (e == list_end(&cur_proc->children))
+	{
+		lock_release(&cur_proc->my_lock->list_lock);
+		return -1;
+	}
+	lock_release(&cur_proc->my_lock->list_lock);
+	/* wait child to exit */
+	sema_down(&child->wait);
+	/* when child exited, get his exit code, remove from the list and free memory */
+	lock_acquire(&cur_proc->my_lock->list_lock);
+	int ret = child->exit_status;
+	list_remove(&child->elem);
+	lock_release(&cur_proc->my_lock->list_lock);
+	free(child);
+
+	// pass exit status
+	return ret;
 }
 
 /* Free the current process's resources. */
@@ -192,6 +228,55 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+
+  struct process* cur_proc = cur->proc;
+  if(cur_proc)
+  {
+	  /* ----  CHILDREN SECTION ---- */
+	  /* notify children that parent dies */
+	  lock_acquire(&cur_proc->my_lock->list_lock);
+	  (cur_proc->my_lock->count)--;
+	  cur_proc->my_lock->parent_alive = false;
+
+	  struct list_elem* e;
+	  /* dealloc zombies */
+	  for(e = list_begin(&cur_proc->children);
+			  e != list_end(&cur_proc->children);)
+	  {
+		  struct process* child = list_entry(e, struct process, elem);
+		  if(child->exited)
+		  {
+			  e = list_remove(e);
+			  free(child);
+		  }
+		  else
+			  e = list_next(e);
+	  }
+	  /* if no children left in the group, free the lock */
+	  bool lock_is_needed = cur_proc->my_lock->count;
+	  lock_release(&cur_proc->my_lock->list_lock);
+	  if (!lock_is_needed)
+		  free(cur_proc->my_lock);
+	  /* ---- END OF CHILDREN SECTION ---- */
+
+	  /* ---- PARENT SECTION ---- */
+	  /* next we will modify critical section in the list, lock should be acquired */
+	  lock_acquire(&cur_proc->parent_lock->list_lock);
+	  cur_proc->parent_lock->count--;
+	  struct parent_list_guard* lock = cur_proc->parent_lock; /* to free lock if necessary */
+	  lock_is_needed = cur_proc->parent_lock->count;
+	  if(cur_proc->cur_proc->parent_alive)
+	  {
+		  /* if parent is alive, change status and release resources */
+		  cur_proc->exited = true;
+		  sema_up(&cur_proc->wait);
+	  }
+	  /* if parent is dead, free memory */
+	  else  free(cur_proc);
+
+	  lock_release(&lock->list_lock);
+	  if(!lock_is_needed) free(lock);
+  }
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */

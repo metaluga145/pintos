@@ -4,14 +4,23 @@
 #include "threads/thread.h"
 #include "threads/synch.h"
 
+static struct parent_list_guard
+{
+	struct lock list_lock;
+	unsigned count;
+	bool parent_alive;
+};
+
 struct process
 {
-	int pid;
+	tid_t pid;
 	int exit_status;
-	struct thread* pthread;
-	struct list children;
+	bool exited;
 	struct list_elem elem; 	// element of parent's children list
-	struct lock list_lock;
+	struct parent_list_guard* parent_lock;
+
+	struct list children;
+	struct parent_list_guard* my_lock;
 
 	struct semaphore wait;
 };
