@@ -3,6 +3,7 @@
 
 #include "threads/thread.h"
 #include "threads/synch.h"
+#include "filesys/file.h"
 
 static struct parent_list_guard
 {
@@ -22,6 +23,7 @@ struct process
 	struct list children;
 	struct parent_list_guard* my_lock;
 
+	struct file* executable;	// parent-dependent. must be closed after acquiring parent's lock
 	struct semaphore wait;
 };
 

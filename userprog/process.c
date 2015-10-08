@@ -28,6 +28,7 @@ static struct args_tmp
 	struct semaphore loading_block;
 	bool loaded;
 	struct process* cur_proc;
+	struct file* executable;
 };
 
 static struct list threads_children;
@@ -135,6 +136,8 @@ process_execute (const char *cmdline)
 
   /* waiting while loading is finished */
   sema_down(&args->loading_block);
+
+  child->executable = args->executable;
 
   free_all: if(!args->loaded)
 	  tid = TID_ERROR;
@@ -294,6 +297,7 @@ process_exit (void)
 	if (cur_proc->parent_lock)
 	{
 	  lock_acquire(&cur_proc->parent_lock->list_lock);
+	  file_close(cur_proc->executable);
 	  cur_proc->parent_lock->count--;
 	  struct parent_list_guard* lock = cur_proc->parent_lock; /* to free lock if necessary */
 	  lock_is_needed = cur_proc->parent_lock->count;
@@ -313,6 +317,7 @@ process_exit (void)
 	{
 		/* if process was spawned by initial thread */
 		lock_acquire(&list_lock);
+		file_close(cur_proc->executable);
 		cur_proc->exited = true;
 		sema_up(&cur_proc->wait);
 		lock_release(&list_lock);
@@ -534,7 +539,13 @@ load (struct args_tmp* args, void (**eip) (void), void **esp)
 
  done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
+	 if(success)
+	 {
+		 args->executable = file;
+		 file_deny_write(agrs->executable);
+	 }
+	 else file_close (file);
+
   return success;
 }
 
