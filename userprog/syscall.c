@@ -5,8 +5,12 @@
 #include "threads/thread.h"
 #include <lib/kernel/console.h>
 #include <string.h>
+#include "threads/malloc.h"
 
+#include "devices/shutdown.h"
 #include "userprog/process.h"
+#include "filesys/filesys.h"
+#include "filesys/file.h"
 #include "threads/vaddr.h"
 
 /* system call functions */
@@ -19,8 +23,8 @@ static bool sys_create(const char*, size_t);
 static bool sys_remove(const char*);
 static int sys_open(const char*);
 static int sys_filesize(int);
-static int sys_read(unsigned, char*, size_t)
-static int sys_write(unsigned, const void*, size_t);
+static int sys_read(unsigned, char*, size_t);
+static int sys_write(unsigned, const char*, size_t);
 static void sys_seek(int, unsigned);
 static unsigned sys_tell(int);
 static void sys_close(int);
@@ -29,7 +33,7 @@ static void sys_close(int);
 static struct file_descriptor* find_fd(struct list*, int);
 static int get_user(const uint8_t*);
 static int get_int_32(const void*);
-static void exit(int code)
+void exit(int code)
 {
 	sys_exit(code);
 }
@@ -49,7 +53,7 @@ syscall_handler (struct intr_frame *f)
 	int syscalln = get_int_32(f->esp);
 	switch(syscalln)
 	{
-		case: SYS_HALT:	sys_halt();
+		case SYS_HALT:	sys_halt();
 			break;
 		case SYS_EXIT: sys_exit(get_int_32(f->esp+4));
 			break;
@@ -75,7 +79,7 @@ syscall_handler (struct intr_frame *f)
 			break;
 		case SYS_SEEK: sys_seek(get_int_32(f->esp+4), (unsigned)get_int_32(f->esp+8));
 			break;
-		case SYS_TELL: f->eax = (unsigned) sys_seek(get_int_32(f->esp+4));
+		case SYS_TELL: f->eax = (unsigned) sys_tell(get_int_32(f->esp+4));
 			break;
 		case SYS_CLOSE: sys_close(get_int_32(f->esp+4));
 			break;
@@ -89,7 +93,7 @@ syscall_handler (struct intr_frame *f)
 
 static void sys_halt(void)
 {
-	power_off();
+	shutdown_power_off();
 	NOT_REACHED();
 }
 
@@ -128,7 +132,7 @@ static int sys_wait(tid_t tid)
 	return process_wait(tid);
 }
 
-static bool sys_reate(const char* file_name, size_t init_size)
+static bool sys_create(const char* file_name, size_t init_size)
 {
 	if (file_name >= PHYS_BASE || get_user(file_name) == -1) exit(-1);
 
@@ -205,7 +209,7 @@ static int sys_read(unsigned fd, char* buffer, size_t size)
 		{
 			struct file_descriptor* struct_fd = find_fd(&(thread_current()->proc->fds), fd);
 			int ret = -1;
-			if(file_descriptor)
+			if(struct_fd)
 			{
 				lock_acquire(&file_sys_lock);
 				ret = file_read(struct_fd->file, buffer, size);
@@ -218,28 +222,28 @@ static int sys_read(unsigned fd, char* buffer, size_t size)
 
 }
 
-static int sys_write(unsigned int fd, const char *buf, size_t count)
+static int sys_write(unsigned int fd, const char *buffer, size_t size)
 {
-	if(buf+count-1 >= PHYS_BASE || get_user(buf) == -1) exit(-1);
+	if(buffer+size-1 >= PHYS_BASE || get_user(buffer) == -1) exit(-1);
 	switch(fd)
 	{
 		case 0: return -1;
 		case 1:
 		{
 			size_t written = 0;
-			while(written + 128 < count)
+			while(written + 128 < size)
 			{
-				putbuf(buf+written, 128);
+				putbuf(buffer+written, 128);
 				written += 128;
 			}
-			putbuf(buf+written, count % 128);
-			return count;
+			putbuf(buffer+written, size % 128);
+			return size;
 		}
 		default:
 		{
 			struct file_descriptor* struct_fd = find_fd(&(thread_current()->proc->fds), fd);
 			int ret = -1;
-			if(file_descriptor)
+			if(struct_fd)
 			{
 				lock_acquire(&file_sys_lock);
 				ret = file_write(struct_fd->file, buffer, size);
@@ -254,7 +258,7 @@ static int sys_write(unsigned int fd, const char *buf, size_t count)
 static void sys_seek(int fd, unsigned position)
 {
 	struct file_descriptor* struct_fd = find_fd(&(thread_current()->proc->fds), fd);
-	if(file_descriptor)
+	if(struct_fd)
 	{
 		lock_acquire(&file_sys_lock);
 		file_seek(struct_fd->file, position);
@@ -267,7 +271,7 @@ static unsigned sys_tell(int fd)
 {
 	struct file_descriptor* struct_fd = find_fd(&(thread_current()->proc->fds), fd);
 	unsigned ret = 0;
-	if(file_descriptor)
+	if(struct_fd)
 	{
 		lock_acquire(&file_sys_lock);
 		ret = file_tell(struct_fd->file);
@@ -279,7 +283,7 @@ static unsigned sys_tell(int fd)
 static void sys_close(int fd)
 {
 	struct file_descriptor* struct_fd = find_fd(&(thread_current()->proc->fds), fd);
-	if(file_descriptor)
+	if(struct_fd)
 	{
 		lock_acquire(&file_sys_lock);
 		file_close(struct_fd->file);
@@ -320,7 +324,7 @@ static int get_user(const uint8_t* uaddr)
 
 static int get_int_32(const void* ptr_)
 {
-	if ((int)ptr_ % 4 || ptr_ > PHYS_BASE) exit(-1);
+	if (ptr_ >= PHYS_BASE) exit(-1);
 	uint8_t *ptr = ptr_;
 	int i;
 	for (i = 0; i < 4; ++i)

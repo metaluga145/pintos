@@ -156,8 +156,7 @@ process_execute (const char *cmdline)
   }
   else
   {
-	  free(child->my_lock);
-	  free(child);
+	  child->exited = true;	// make child to deallocate resources himself
   }
   lock_release(parents_lock);
   return tid;
@@ -179,7 +178,6 @@ start_process (void *args_)
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (args, &if_.eip, &if_.esp);
 
-  /* If load failed, quit. */
   args->loaded = success;
   thread_current()->proc = args->cur_proc;
   sema_up(&args->loading_block);
@@ -302,7 +300,7 @@ process_exit (void)
 	  cur_proc->parent_lock->count--;
 	  struct parent_list_guard* lock = cur_proc->parent_lock; /* to free lock if necessary */
 	  lock_is_needed = cur_proc->parent_lock->count;
-	  if(cur_proc->parent_lock->parent_alive)
+	  if(cur_proc->parent_lock->parent_alive && !(cur_proc->exited))
 	  {
 		  /* if parent is alive, change status and release resources */
 		  cur_proc->exited = true;
@@ -543,7 +541,7 @@ load (struct args_tmp* args, void (**eip) (void), void **esp)
 	 if(success)
 	 {
 		 args->executable = file;
-		 file_deny_write(agrs->executable);
+		 file_deny_write(args->executable);
 	 }
 	 else file_close (file);
 
