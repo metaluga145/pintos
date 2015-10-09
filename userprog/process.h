@@ -12,6 +12,17 @@ static struct parent_list_guard
 	bool parent_alive;
 };
 
+struct file_descriptor
+{
+	/*
+	 * this structure is dependent on file_sys_lock (belong to syscall.c for now)
+	 * any time we change 'file', we should first acquire  lock due to file system limitations
+	 */
+	int fd;					// file descriptor value
+	struct file* file;		// pointer to an open file
+	struct list_elem elem;	// element of the list fds in struct process.
+};
+
 struct process
 {
 	tid_t pid;
@@ -25,6 +36,8 @@ struct process
 
 	struct file* executable;	// parent-dependent. must be closed after acquiring parent's lock
 	struct semaphore wait;
+
+	struct list fds;		// this list is not a critical section. No one, except owner, can use it
 };
 
 void process_init(void);

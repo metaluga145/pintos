@@ -93,6 +93,7 @@ process_execute (const char *cmdline)
 //--------------------------------------------------------------------------------
   struct process* child = malloc(sizeof(struct process));
   list_init(&child->children);
+  list_init(&child->fds);
   child->my_lock = malloc(sizeof(struct parent_list_guard));
   lock_init(&child->my_lock->list_lock);
   child->my_lock->count = 1;
