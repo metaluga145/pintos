@@ -38,6 +38,7 @@ void exit(int code)
 	sys_exit(code);
 }
 
+/* lock is used to make sure that only one process is writing to the file at a time */
 static struct lock file_sys_lock;
 
 void
@@ -50,6 +51,10 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f)
 {
+	/*
+	 * get the system call number and get all appropriate arguments.
+	 * type conversion is not preserved in several places, so there might be warnings about it.
+	 */
 	int syscalln = get_int_32(f->esp);
 	switch(syscalln)
 	{
@@ -123,19 +128,22 @@ static void sys_exit(int code)
 
 static int sys_exec(const char* cmd)
 {
+	/* check validity of a pointer and execute the command */
 	if(cmd >= PHYS_BASE || get_user(cmd) == -1) exit(-1);
 	return process_execute(cmd);
 }
 
 static int sys_wait(tid_t tid)
 {
+	/* just call process_wait, everything is done there */
 	return process_wait(tid);
 }
 
 static bool sys_create(const char* file_name, size_t init_size)
 {
+	/* check validity of a pointer */
 	if (file_name >= PHYS_BASE || get_user(file_name) == -1) exit(-1);
-
+	/* acquire lock and try to create a file. return result */
 	bool ret;
 	lock_acquire(&file_sys_lock);
 	ret = filesys_create(file_name, init_size);
@@ -146,7 +154,9 @@ static bool sys_create(const char* file_name, size_t init_size)
 
 static bool sys_remove(const char* file_name)
 {
+	/* check validity of a pointer */
 	if (file_name >= PHYS_BASE || get_user(file_name) == -1) exit(-1);
+	/* acquire lock and try to remove a file. return result */
 	bool ret;
 	lock_acquire(&file_sys_lock);
 	ret = filesys_remove(file_name);
@@ -156,11 +166,12 @@ static bool sys_remove(const char* file_name)
 
 static int sys_open(const char* file_name)
 {
+	/* check validity of a pointer */
 	if (file_name >= PHYS_BASE || get_user(file_name) == -1) exit(-1);
-
+	/* calculate next value of fd */
 	static int next_fd;
 	if (next_fd < 2) next_fd = 2;
-
+	/* acquire lock and try to open a file. return result */
 	int ret = -1;
 	struct file* file;
 	lock_acquire(&file_sys_lock);
@@ -169,6 +180,7 @@ static int sys_open(const char* file_name)
 
 	if(file)
 	{
+		/* if file is opened, store file descriptor to the list of descriptors */
 		struct file_descriptor* fd= malloc(sizeof(struct file_descriptor));
 		fd->fd = next_fd++;
 		fd->file = file;
@@ -181,11 +193,17 @@ static int sys_open(const char* file_name)
 
 static int sys_filesize(int fd)
 {
+	/*
+	 * try to find fd in the list of fds, which belong to current process
+	 * no need to acquire a lock, because no data racing in this list.
+	 * only holder can access this list
+	 */
 	struct file_descriptor* struct_fd = find_fd(&(thread_current()->proc->fds), fd);
 
 	int ret = -1;
 	if (struct_fd)
 	{
+		// if there is such fd, return the length of the file.
 		lock_acquire(&file_sys_lock);
 		ret = file_length(struct_fd->file);
 		lock_release(&file_sys_lock);
@@ -195,22 +213,26 @@ static int sys_filesize(int fd)
 
 static int sys_read(unsigned fd, char* buffer, size_t size)
 {
+	/* check validity of a pointer */
 	if (buffer+size-1 >= PHYS_BASE || get_user(buffer) == -1) exit(-1);
 	switch(fd)
 	{
 		case 0:
 		{
+			/* if read from console, read it by one char */
 			int i = 0;
 			for(; i < size; ++i) buffer[i] = input_getc();
 			return i;
 		}
-		case 1: return -1;
+		case 1: return -1; // we cannot read from console input
 		default:
 		{
+			/* if we need to read from the file, find the file */
 			struct file_descriptor* struct_fd = find_fd(&(thread_current()->proc->fds), fd);
 			int ret = -1;
 			if(struct_fd)
 			{
+				// if the file is found, read from it */
 				lock_acquire(&file_sys_lock);
 				ret = file_read(struct_fd->file, buffer, size);
 				lock_release(&file_sys_lock);
@@ -224,12 +246,14 @@ static int sys_read(unsigned fd, char* buffer, size_t size)
 
 static int sys_write(unsigned int fd, const char *buffer, size_t size)
 {
+	/* check validity of a pointer */
 	if(buffer+size-1 >= PHYS_BASE || get_user(buffer) == -1) exit(-1);
 	switch(fd)
 	{
-		case 0: return -1;
+		case 0: return -1; // cannot write to console output
 		case 1:
 		{
+			// if write to console, split in chunks and write to console
 			size_t written = 0;
 			while(written + 128 < size)
 			{
@@ -241,10 +265,12 @@ static int sys_write(unsigned int fd, const char *buffer, size_t size)
 		}
 		default:
 		{
+			// if write to file, find fd
 			struct file_descriptor* struct_fd = find_fd(&(thread_current()->proc->fds), fd);
 			int ret = -1;
 			if(struct_fd)
 			{
+				// if there is such fd, write to the file
 				lock_acquire(&file_sys_lock);
 				ret = file_write(struct_fd->file, buffer, size);
 				lock_release(&file_sys_lock);
@@ -257,9 +283,11 @@ static int sys_write(unsigned int fd, const char *buffer, size_t size)
 
 static void sys_seek(int fd, unsigned position)
 {
+	/* find such fd */
 	struct file_descriptor* struct_fd = find_fd(&(thread_current()->proc->fds), fd);
 	if(struct_fd)
 	{
+		// if found, seek
 		lock_acquire(&file_sys_lock);
 		file_seek(struct_fd->file, position);
 		lock_release(&file_sys_lock);
@@ -269,10 +297,12 @@ static void sys_seek(int fd, unsigned position)
 
 static unsigned sys_tell(int fd)
 {
+	/* find such fd */
 	struct file_descriptor* struct_fd = find_fd(&(thread_current()->proc->fds), fd);
 	unsigned ret = 0;
 	if(struct_fd)
 	{
+		// if found, tell
 		lock_acquire(&file_sys_lock);
 		ret = file_tell(struct_fd->file);
 		lock_release(&file_sys_lock);
@@ -282,9 +312,11 @@ static unsigned sys_tell(int fd)
 
 static void sys_close(int fd)
 {
+	/* find such fd */
 	struct file_descriptor* struct_fd = find_fd(&(thread_current()->proc->fds), fd);
 	if(struct_fd)
 	{
+		// if found, close it, remove from the list and deallocate the structure
 		lock_acquire(&file_sys_lock);
 		file_close(struct_fd->file);
 		lock_release(&file_sys_lock);
@@ -294,6 +326,10 @@ static void sys_close(int fd)
 	}
 }
 
+/*
+ * auxiliary function, find file associated with a given file descriptor.
+ * returns NULL, if not such fd in the list.
+ */
 static struct file_descriptor* find_fd(struct list* fds, int fd)
 {
 	struct file_descriptor* ret = NULL;
@@ -312,7 +348,7 @@ static struct file_descriptor* find_fd(struct list* fds, int fd)
 
 	return ret;
 }
-
+/* get user to check validity of the pointer */
 static int get_user(const uint8_t* uaddr)
 {
 	int result;
@@ -321,7 +357,10 @@ static int get_user(const uint8_t* uaddr)
 	return result;
 }
 
-
+/*
+ * auxiliary function, used to get 4 bytes stored on ptr_,
+ * checking if all of them belong to the user.
+ */
 static int get_int_32(const void* ptr_)
 {
 	if (ptr_ >= PHYS_BASE) exit(-1);

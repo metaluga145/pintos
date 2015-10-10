@@ -20,15 +20,18 @@
 #include "threads/synch.h"
 #include "threads/malloc.h"
 
+/*
+ * structure to pass arguments to a child's thread and set up them.
+ */
 static struct args_tmp
 {
-	size_t argc;
-	char** argv;
-	size_t total_length;
-	struct semaphore loading_block;
-	bool loaded;
-	struct process* cur_proc;
-	struct file* executable;
+	size_t argc;					// argc (to stack)
+	char** argv;					// array of char*
+	size_t total_length;			// total length of args. used to speed up storing on the stack.
+	struct semaphore loading_block;	// sema used to wait while child is loaded.
+	bool loaded;					// if loading was successful.
+	struct process* cur_proc;		// pointer to the child's process structure. Need to be stored to thread structure.
+	struct file* executable;		// to return the pointer to the executable file.
 };
 
 static struct list threads_children;
@@ -40,7 +43,7 @@ static bool load (struct args_tmp* args, void (**eip) (void), void **esp);
 #define MAX_ARGS 128
 #define MAX_LINE_SIZE 4000
 
-
+/* initialize the list and the lock */
 void process_init(void)
 {
 	list_init(&threads_children);
@@ -54,14 +57,6 @@ void process_init(void)
 tid_t
 process_execute (const char *cmdline)
 {
-/*
-char* ptr;
-do{
-ptr= malloc(100);
-printf("malloc ok\n");
-}while(ptr);
-printf("no more memory OK\n");
-*/
   char *fn_copy;
   tid_t tid;
 
@@ -74,11 +69,12 @@ printf("no more memory OK\n");
   /* setting up arguments */
   if (PGSIZE - 1 == strlcpy (fn_copy, cmdline, PGSIZE) && cmdline[PGSIZE - 1] != '\0')
   {
-	  /* if cmd is too big to feet in one page */
+	  /* if cmd is too big to feet in one page, dealloca memory and return -1 */
 	  palloc_free_page (fn_copy);
 	  return TID_ERROR;
   }
 //---------------------------------------------------------------------------
+  /* create and initialize temporal structure for arguments */
   struct args_tmp* args = malloc(sizeof(struct args_tmp));
   args->argc = 0;
   args->argv = malloc(MAX_ARGS*sizeof(char*));
@@ -88,17 +84,18 @@ printf("no more memory OK\n");
 //-------------------------------------------------------------------------------
   /* parse command line */
   char* token, *save_ptr;
-  /* modify to return length - increased performance */
   for (token = strtok_r (fn_copy, " ", &save_ptr);
 		  token != NULL && args->argc < MAX_ARGS;
 		  token = strtok_r (NULL, " ", &save_ptr))
   {
 	  args->argv[args->argc] = token;
 	  args->argc++;
+	  /* calculate the length of an argument (including '\0'). */
 	  args->total_length += (*save_ptr != '\0' || *(save_ptr - 1) == '\0') ? (save_ptr - token) : (save_ptr - token + 1);
   }
 
 //--------------------------------------------------------------------------------
+  /* allocate and init child's process structure */
   struct process* child = malloc(sizeof(struct process));
   list_init(&child->children);
   list_init(&child->fds);
@@ -112,9 +109,8 @@ printf("no more memory OK\n");
   args->cur_proc = child;	// child's thread should have pointer to its process instance
 
   struct thread* parent = thread_current();
-  /*
-   * the very first process does not have a parent
-   */
+
+  /* check if parent is a process or a thread, and store appropriate pointers to the lock and to the list */
   struct lock* parents_lock;
   struct list* parents_list;
   if (parent->proc)
@@ -129,11 +125,13 @@ printf("no more memory OK\n");
 	  parents_lock = &list_lock;
 	  parents_list = &threads_children;
   }
+  /*
+   * avoid race conditions when child tries to modify itself,
+   * while is not stored on the list of children
+   */
   lock_acquire(parents_lock);
 //--------------------------------------------------------------------------------
-  /*
-   * check if everything can fit in one page
-   */
+  /* check if everything can fit in one page */
   args->total_length += 8 - (args->total_length % 4); 	// account for alignment and NULL
   // calculate total length accounting for argv ptr, argc and return addr on the stack
   size_t full_length = args->total_length + sizeof(char*)*(args->argc + 2) + sizeof(int);
@@ -142,12 +140,12 @@ printf("no more memory OK\n");
 //---------------------------------------------------------------------------------
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (args->argv[0], PRI_DEFAULT, start_process, args);
-
+//---------------------------------------------------------------------------------
   /* waiting while loading is finished */
   sema_down(&args->loading_block);
-
+  // remember executable file
   child->executable = args->executable;
-
+  // if failed tid = -1
   free_all: if(!args->loaded)
 	  tid = TID_ERROR;
 
@@ -158,12 +156,14 @@ printf("no more memory OK\n");
 
   if (tid != TID_ERROR)
   {
+	  /* if everything is OK, store pid, and add child to list of children */
 	  child->pid = tid;
 	  list_push_back(parents_list, &child->elem);
 	if(parent->proc) parent->proc->my_lock->count++;
   }
   else
   {
+	  /* if fail, make child to deallocate its resources himself (thread_exit() and process_exit() will be called) */
 	  child->exited = true;	// make child to deallocate resources himself
   }
   lock_release(parents_lock);
@@ -186,6 +186,7 @@ start_process (void *args_)
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (args, &if_.eip, &if_.esp);
 
+  /* return result of loading to parent and unlock him */
   args->loaded = success;
   thread_current()->proc = args->cur_proc;
   sema_up(&args->loading_block);
@@ -216,6 +217,7 @@ int
 process_wait (tid_t child_tid)
 {
 	/* acquire the lock for the list */
+	/* need to choose correct lock and list, because the init thread is not a process */
 	struct process* cur_proc = thread_current()->proc;
 	struct lock* parents_lock;
 	struct list* parents_list;
@@ -241,6 +243,7 @@ process_wait (tid_t child_tid)
 		if(child->pid == child_tid)
 			break;
 	}
+	/* if child_tid is not a child if this process */
 	if (e == list_end(parents_list))
 	{
 		lock_release(parents_lock);
@@ -272,6 +275,7 @@ process_exit (void)
   struct process* cur_proc = cur->proc;
   if(cur_proc)
   {
+	  // IF THIS IS PROCESS
 	  /* ----  CHILDREN SECTION ---- */
 	  /* notify children that parent dies */
 	  lock_acquire(&cur_proc->my_lock->list_lock);
@@ -304,10 +308,10 @@ process_exit (void)
 	if (cur_proc->parent_lock)
 	{
 	  lock_acquire(&cur_proc->parent_lock->list_lock);
-	  file_close(cur_proc->executable);
-	  cur_proc->parent_lock->count--;
+	  file_close(cur_proc->executable);		// close executable file
+	  cur_proc->parent_lock->count--;		// decrement number of participants in the group
 	  struct parent_list_guard* lock = cur_proc->parent_lock; /* to free lock if necessary */
-	  lock_is_needed = cur_proc->parent_lock->count;
+	  lock_is_needed = cur_proc->parent_lock->count;		// check if it needs to be deallocated
 	  if(cur_proc->parent_lock->parent_alive && !(cur_proc->exited))
 	  {
 		  /* if parent is alive, change status and release resources */
@@ -548,10 +552,10 @@ load (struct args_tmp* args, void (**eip) (void), void **esp)
   /* We arrive here whether the load is successful or not. */
 	 if(success)
 	 {
-		 args->executable = file;
-		 file_deny_write(args->executable);
+		 args->executable = file;			// if success, keep executable file open
+		 file_deny_write(args->executable);	// deny writings in it
 	 }
-	 else file_close (file);
+	 else file_close (file);				// otherwise close
 
   return success;
 }
@@ -671,14 +675,16 @@ setup_stack (void **esp, struct args_tmp* args)
 {
   uint8_t *kpage;
   bool success = false;
-
+  /* obtain and install a new page */
   kpage = palloc_get_page (PAL_USER | PAL_ZERO);
   if (kpage != NULL) 
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
       {
+    	  /* if new page is installed successfully, put args on the stack */
     	  char* esp_ = (char*)PHYS_BASE;
+    	  /* since we know total length, we can calculate where to put pointers to arguments */
     	  char** esp_argv = (char**)(esp_ - (char*)(args->total_length));
     	  int i;
     	  for(i = args->argc - 1; i >= 0 ; --i)
@@ -689,12 +695,16 @@ setup_stack (void **esp, struct args_tmp* args)
     		  --esp_argv;
     		  *esp_argv = esp_;
     	  }
+    	  /* put pointer to argv on the stack */
     	  esp_ = (char*)esp_argv;
     	  --esp_argv;
     	  *esp_argv = esp_;
+    	  /* put argc */
     	  esp_argv -= sizeof(int)/sizeof(char**);
     	  memcpy(esp_argv, &(args->argc), sizeof(int));
+    	  /* return address */
     	  --esp_argv;
+    	  /* final value of esp */
     	  *esp = esp_argv;
       }
       else

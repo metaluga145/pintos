@@ -4,9 +4,8 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
-//#include "userprog/process.h"	// circular dependency resolution
 
-struct process;	// circular dependency resolution
+struct process;	// circular dependency resolution with "process.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -99,7 +98,7 @@ struct thread
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
     uint32_t *pagedir;                  /* Page directory. */
-    struct process* proc;
+    struct process* proc;				/* pointer to a process. owned by process.h */
 #endif
 
     /* Owned by thread.c. */

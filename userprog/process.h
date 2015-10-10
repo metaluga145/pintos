@@ -5,6 +5,10 @@
 #include "threads/synch.h"
 #include "filesys/file.h"
 
+/*
+ * shared lock used to protect parent's list of children as a critical section.
+ * must be deallocated when count reaches 0 (parent is already dead, no other children exist.
+ */
 static struct parent_list_guard
 {
 	struct lock list_lock;
@@ -12,6 +16,8 @@ static struct parent_list_guard
 	bool parent_alive;
 };
 
+/* It's here and not in file.h just because I tried to avoid modification of other parts of the code */
+/* fd used to track open by process files */
 struct file_descriptor
 {
 	/*
@@ -23,23 +29,32 @@ struct file_descriptor
 	struct list_elem elem;	// element of the list fds in struct process.
 };
 
+/*
+ * process structure stores all necessary information about process.
+ * It is used to track a process state, exit status, children of a process,
+ * executable file and open files.
+ */
 struct process
 {
-	tid_t pid;
-	int exit_status;
-	bool exited;
+	tid_t pid;				// pid of the process (= tid of the thread it assigned to)
+	int exit_status;		// exit status. For parent. Critical section protected by sema wait.
+	bool exited;			// true if process exited. Used to avoid racing if child exited before added to the list of children.
 	struct list_elem elem; 	// element of parent's children list
+	/*
+	 * lock used to protect critical section of parent's instance.
+	 * Used to avoid racing during child's memory deallocation.
+	 */
 	struct parent_list_guard* parent_lock;
 
-	struct list children;
-	struct parent_list_guard* my_lock;
+	struct list children;	// list of child processes
+	struct parent_list_guard* my_lock;	// now this process is parent and it has the same lock.
 
-	struct file* executable;	// parent-dependent. must be closed after acquiring parent's lock
-	struct semaphore wait;
+	struct file* executable;	// parent-dependent. must be closed after acquiring parent's lock.
+	struct semaphore wait;		// sema is used to wait while child finishes its execution.
 
 	struct list fds;		// this list is not a critical section. No one, except owner, can use it
 };
-
+/* initalization */
 void process_init(void);
 
 tid_t process_execute (const char *);
