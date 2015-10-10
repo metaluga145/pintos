@@ -54,6 +54,14 @@ void process_init(void)
 tid_t
 process_execute (const char *cmdline)
 {
+/*
+char* ptr;
+do{
+ptr= malloc(100);
+printf("malloc ok\n");
+}while(ptr);
+printf("no more memory OK\n");
+*/
   char *fn_copy;
   tid_t tid;
 
