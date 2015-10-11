@@ -76,8 +76,19 @@ process_execute (const char *cmdline)
 //---------------------------------------------------------------------------
   /* create and initialize temporal structure for arguments */
   struct args_tmp* args = malloc(sizeof(struct args_tmp));
+	if(args == NULL)
+	{
+		free(fn_copy);
+		return TID_ERROR;
+	}
   args->argc = 0;
   args->argv = malloc(MAX_ARGS*sizeof(char*));
+	if(args->argv == NULL)
+	{
+		free(fn_copy);
+		free(args);
+		return TID_ERROR;
+	}
   sema_init(&args->loading_block, 0);
   args->loaded = false;
   args->total_length = 0;
@@ -97,9 +108,24 @@ process_execute (const char *cmdline)
 //--------------------------------------------------------------------------------
   /* allocate and init child's process structure */
   struct process* child = malloc(sizeof(struct process));
+	if(child == NULL)
+	{
+		free(args->argv);
+		free(args);
+		free(fn_copy);
+		return TID_ERROR;
+	}	
   list_init(&child->children);
   list_init(&child->fds);
   child->my_lock = malloc(sizeof(struct parent_list_guard));
+	if(child->my_lock == NULL)
+	{
+		free(child);
+		free(args->argv);
+		free(args);
+		free(fn_copy);
+		return TID_ERROR;
+	}
   lock_init(&child->my_lock->list_lock);
   child->my_lock->count = 1;
   child->my_lock->parent_alive = true;
