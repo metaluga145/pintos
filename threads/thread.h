@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 struct process;	// circular dependency resolution with "process.h"
-
+struct page_table; // circular dependency resolution with "page.h"
 /* States in a thread's life cycle. */
 enum thread_status
   {
@@ -101,6 +101,7 @@ struct thread
     struct process* proc;				/* pointer to a process. owned by process.h */
 #endif
 
+    struct page_table* pg_table;
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
