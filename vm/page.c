@@ -49,6 +49,7 @@ struct page* page_construct(void* vaddr, void* paddr,
 	new_pg->vaddr = vaddr;
 	new_pg->paddr = paddr;
 	new_pg->flags = flags;
+	new_pg->thread = t;
 
 	hash_insert(&t->pg_table->table, &new_pg->elem);
 

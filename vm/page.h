@@ -22,7 +22,7 @@ struct page
 	struct thread* thread;
 
 #define SECTORS_PER_PAGE PGSIZE/BLOCK_SECTOR_SIZE
-	size_t swap_page_idx;
+	size_t swap_idx;
 
 	struct file* file;
 	uint32_t read_bytes;
