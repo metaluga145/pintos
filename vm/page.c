@@ -5,9 +5,9 @@
 #include "threads/palloc.h"
 
 /* --------------- page table --------------- */
-static hash_hash_func page_hash_func;
-static hash_less_func page_cmp;
-static hash_action_funct page_destructor;
+static unsigned page_hash_func(const struct hash_elem *e, void *aux);
+static bool page_cmp (const struct hash_elem *a, const struct hash_elem *b, void *aux);
+static void page_destructor(struct hash_elem *e, void *aux);
 
 struct page_table* page_table_create(void)
 {
@@ -23,13 +23,13 @@ void page_table_destroy(struct page_table* table)
 	free(table);
 }
 
-static hash_hash_func page_hash_func
+static unsigned page_hash_func(const struct hash_elem *e, void *aux)
 {
-	struct page* page = hash_entry(e, struct page, elem);
-	return hash_bytes(&p->vaddr, sizeof(p->vaddr));
+	struct page* pg = hash_entry(e, struct page, elem);
+	return hash_bytes(&pg->vaddr, sizeof(pg->vaddr));
 }
 
-static hash_less_func page_cmp
+static bool page_cmp (const struct hash_elem *a, const struct hash_elem *b, void *aux)
 {
 	return hash_entry(a, struct page, elem)->vaddr < hash_entry(b, struct page, elem)->vaddr;
 }
@@ -57,7 +57,7 @@ struct page* page_construct(void* vaddr, void* paddr,
 	return new_pg;
 }
 
-static hash_action_funct page_destructor
+static void page_destructor(struct hash_elem *e, void *aux)
 {
 	struct page* page = hash_entry(e, struct page, elem);
 	/* check if swapped ? */

@@ -2,6 +2,8 @@
 #include "devices/block.h"
 #include "bitmap.h"
 #include "threads/synch.h"
+#include "debug.h"
+#include "threads/vaddr.h"
 
 static struct block* swap_block;
 static struct bitmap* swap_table;
@@ -32,7 +34,7 @@ void swap_out(struct page* pg)
 
 	if (idx == BITMAP_ERROR) PANIC("OUT OF SWAPS! REQUEST CANNOT BE SATISFIED");
 
-	size_t i = 0, swap_base = idx * NUM_SECTORS_PER_PAGE;
+	size_t i = 0, swap_base = idx * SECTORS_PER_PAGE;
 	for(; i < SECTORS_PER_PAGE; ++i)
 		 block_write(swap_block, swap_base + i, (uint8_t*)pg->paddr + (i * BLOCK_SECTOR_SIZE));
 
@@ -45,7 +47,7 @@ void swap_in(struct page* pg)
 	ASSERT(pg->paddr != NULL);	// frame must be allocated
 	ASSERT(bitmap_test(swap_table, pg->swap_idx));	// page must be swapped out
 
-	size_t i = 0, swap_base = idx * NUM_SECTORS_PER_PAGE;
+	size_t i = 0, swap_base = pg->swap_idx * SECTORS_PER_PAGE;
 	for(; i < SECTORS_PER_PAGE; ++i)
 		 block_read(swap_block, swap_base + i, (uint8_t*)pg->paddr + (i * BLOCK_SECTOR_SIZE));
 

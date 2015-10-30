@@ -3,6 +3,7 @@
 
 #include "threads/synch.h"
 #include "vm/page.h"
+#include "threads/palloc.h"
 
 void frame_init(size_t user_page_limit);
 void* frame_alloc(struct page *, enum palloc_flags);

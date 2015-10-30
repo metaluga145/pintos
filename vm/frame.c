@@ -1,8 +1,9 @@
 #include "vm/frame.h"
-#include "threads/palloc.h"
 #include "threads/malloc.h"
 #include <list.h>
 #include <hash.h>
+#include "threads/vaddr.h"
+#include "userprog/pagedir.h"
 
 static struct frame
 {
@@ -35,9 +36,9 @@ void frame_init(size_t user_page_limit)
 	base = free_start + kernel_pages * PGSIZE;
 }
 
-void* frame_alloc(struct page *, enum palloc_flags flags)
+void* frame_alloc(struct page* page, enum palloc_flags flags)
 {
-	ASSERT(flags & PAL_USER != 0);		// this function is only for users
+	ASSERT((flags & PAL_USER) != 0);		// this function is only for users
 
 	struct frame* frame = NULL;
 	void* paddr = palloc_get_page(flags);
@@ -80,13 +81,14 @@ static struct frame* frame_evict(void)
 {
 	struct frame* evicted_frame = NULL;
 	struct list_elem* e = list_begin(&frame_list);
+	struct page* candidate_page;
 
 	while(!evicted_frame)
 	{
 		struct frame* candidate_frame = list_entry(e, struct frame, list_elem);
-		struct page* candidate_page = frame->page;
+		candidate_page = candidate_frame->page;
 
-		if(!(candidate_page->pinned))
+		if(!(candidate_page->flags & PG_PINNED))
 		{
 			if(pagedir_is_accessed(candidate_page->thread->pagedir, candidate_page->vaddr))
 				pagedir_set_accessed(candidate_page->thread->pagedir, candidate_page->vaddr, false);
@@ -98,7 +100,7 @@ static struct frame* frame_evict(void)
 		list_push_back(&frame_list, &candidate_frame->list_elem);
 	}
 
-	if (pagedir_is_dirty(evicted_frame->thread->pagedir, evicted_frame->vaddr))
+	if (pagedir_is_dirty(candidate_page->thread->pagedir, candidate_page->vaddr))
 	{
 		//swap 	out
 	}
