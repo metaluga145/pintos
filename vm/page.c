@@ -2,6 +2,7 @@
 #include "vm/frame.h"
 
 #include "threads/malloc.h"
+#include "threads/palloc.h"
 
 /* --------------- page table --------------- */
 static hash_hash_func page_hash_func;

@@ -5,9 +5,8 @@
 
 #include "threads/thread.h"
 #include "filesys/file.h"
-#include "threads/palloc.h"
 
-typedef u_char flag_t;
+typedef unsigned char flag_t;
 
 struct page
 {

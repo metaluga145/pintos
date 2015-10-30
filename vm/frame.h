@@ -4,8 +4,6 @@
 #include <list.h>
 #include <hash.h>
 #include "threads/synch.h"
-#include "threads/palloc.h"
-#include "threads/malloc.h"
 #include "vm/page.h"
 
 static struct frame

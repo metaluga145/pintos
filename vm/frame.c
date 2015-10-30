@@ -1,5 +1,6 @@
 #include "vm/frame.h"
-
+#include "threads/palloc.h"
+#include "threads/malloc.h"
 static struct frame* frame_evict(void);
 
 void frame_init(unsigned num_frames, void* base_)
