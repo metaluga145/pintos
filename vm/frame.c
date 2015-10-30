@@ -1,15 +1,38 @@
 #include "vm/frame.h"
 #include "threads/palloc.h"
 #include "threads/malloc.h"
+#include <list.h>
+#include <hash.h>
+
+static struct frame
+{
+	struct page* page;		// pointer to the page
+	struct list_elem list_elem;	// element of the list of frames
+};
+
+static struct list frame_list;
+static struct lock frame_list_lock;
+
+static struct frame* frames_all;
+static void* base;
+
 static struct frame* frame_evict(void);
 
-void frame_init(unsigned num_frames, void* base_)
+void frame_init(size_t user_page_limit)
 {
+	uint8_t *free_start = ptov (1024 * 1024);
+	uint8_t *free_end = ptov (init_ram_pages * PGSIZE);
+	size_t free_pages = (free_end - free_start) / PGSIZE;
+	size_t user_pages = free_pages / 2;
+	if (user_pages > user_page_limit)
+	  user_pages = user_page_limit;
+	size_t kernel_pages = free_pages - user_pages;
+
 	list_init(&frame_list);
-	frames_all = malloc(num_frames*sizeof(struct frame));
+	frames_all = malloc(user_pages*sizeof(struct frame));
 	lock_init(&frame_list_lock);
 
-	base = base_;
+	base = free_start + kernel_pages * PGSIZE;
 }
 
 void* frame_alloc(struct page *, enum palloc_flags flags)
