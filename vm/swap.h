@@ -7,5 +7,6 @@ void swap_init(void);
 
 void swap_out(struct page*);
 void swap_in(struct page*);
+void swap_free(struct page*);
 
 #endif

@@ -20,6 +20,9 @@
 #include "threads/synch.h"
 #include "threads/malloc.h"
 
+#include "vm/page.h"
+#include "vm/frame.h"
+
 /*
  * structure to pass arguments to a child's thread and set up them.
  */
@@ -667,14 +670,24 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
       /* Get a page of memory. */
-      uint8_t *kpage = palloc_get_page (PAL_USER);
+      //uint8_t *kpage = palloc_get_page (PAL_USER);
+      struct page* pg = page_construct(upage, writable & PG_FILE);
+      if(!pg) return false;		/* malloc failed to allocate kernel space */
+
+      uint8_t* kpage = frame_alloc(pg, PAL_USER);
+
+      pg->file = file;
+      pg->ofs = ofs;
+      pg->read_bytes = read_bytes;
+
+      /*check for memory leaks in destructing pg */
       if (kpage == NULL)
         return false;
 
       /* Load this page. */
       if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
         {
-          palloc_free_page (kpage);
+          frame_free (kpage);
           return false; 
         }
       memset (kpage + page_read_bytes, 0, page_zero_bytes);
@@ -682,7 +695,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       /* Add the page to the process's address space. */
       if (!install_page (upage, kpage, writable)) 
         {
-          palloc_free_page (kpage);
+    	  frame_free (kpage);
           return false; 
         }
 
@@ -702,10 +715,7 @@ setup_stack (void **esp, struct args_tmp* args)
   uint8_t *kpage;
   bool success = false;
   /* obtain and install a new page */
-  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
-  if (kpage != NULL) 
-    {
-      success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
+	  success = page_push_stack(PHYS_BASE-PGSIZE);
       if (success)
       {
     	  /* if new page is installed successfully, put args on the stack */
@@ -733,9 +743,6 @@ setup_stack (void **esp, struct args_tmp* args)
     	  /* final value of esp */
     	  *esp = esp_argv;
       }
-      else
-        palloc_free_page (kpage);
-    }
   return success;
 }
 

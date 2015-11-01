@@ -1,4 +1,5 @@
 #include "vm/frame.h"
+#include "vm/swap.h"
 #include "threads/malloc.h"
 #include <list.h>
 #include <hash.h>
@@ -49,6 +50,7 @@ void* frame_alloc(struct page* page, enum palloc_flags flags)
 		frame = frame_evict();			// performs swapping if needed
 		size_t frame_idx = (frame - frames_all)/sizeof(struct frame);
 		paddr = base + frame_idx * PGSIZE;
+		if (flags & PAL_ZERO) memset (paddr, 0, PGSIZE);
 	}
 	else
 	{
@@ -64,15 +66,16 @@ void* frame_alloc(struct page* page, enum palloc_flags flags)
 	return paddr;
 }
 
-void frame_free(void* addr)
+void frame_free(void* paddr)
 {
-	size_t frame_idx = (addr - base)/PGSIZE;
+	ASSERT(paddr != NULL);
+	size_t frame_idx = (paddr - base)/PGSIZE;
 
 	lock_acquire(&frame_list_lock);
 
 	frames_all[frame_idx].page = NULL;
 	list_remove(&frames_all[frame_idx].list_elem);
-	palloc_free_page(addr);
+	palloc_free_page(paddr);
 
 	lock_release(&frame_list_lock);
 }
@@ -102,7 +105,9 @@ static struct frame* frame_evict(void)
 
 	if (pagedir_is_dirty(candidate_page->thread->pagedir, candidate_page->vaddr))
 	{
-		//swap 	out
+		swap_out(candidate_page);
 	}
+
+	pagedir_clear_page(candidate_page->thread->pagedir, candidate_page->vaddr);
 	return evicted_frame;
 }

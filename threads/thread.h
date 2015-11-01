@@ -101,7 +101,8 @@ struct thread
     struct process* proc;				/* pointer to a process. owned by process.h */
 #endif
 
-    struct page_table* pg_table;
+    page_table_t pg_table;
+    void* esp;
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };

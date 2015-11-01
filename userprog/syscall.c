@@ -55,6 +55,8 @@ syscall_handler (struct intr_frame *f)
 	 * get the system call number and get all appropriate arguments.
 	 * type conversion is not preserved in several places, so there might be warnings about it.
 	 */
+	thread_current()->esp = f->esp; /* transition from user mode to kernel mode */
+
 	int syscalln = get_int_32(f->esp);
 	switch(syscalln)
 	{

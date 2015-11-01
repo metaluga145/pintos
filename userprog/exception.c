@@ -153,14 +153,53 @@ page_fault (struct intr_frame *f)
    * store eax to eip, and set eax to 0xffffffff,
    * as it is told in the manual.
    */
+  /* need to handle it in another part
   if(!user) {
     f->eip = f->eax;
     f->eax = 0xffffffff;
     return;
+  } */
+
+  if(not_present)
+  {
+	  struct page* pg = page_lookup(fault_addr);
+	  if(!pg)
+		  goto fail;
+	  page_load(pg);
+	  return;
   }
+  else
+  {
+	  void* esp;
+	  if (user)
+		  esp = f->esp;
+	  else esp = thread_current()->esp;
+
+	  /*check if it was a stack access */
+	  if (fault_addr >= esp - 32)
+	  {
+		  if(!page_push_stack(fault_addr))
+			  goto fail;
+		  return;
+	  }
+	  /*
+	   * if it was not a stack access, and it was from kernel side,
+	   * then failed test of user pointer
+	   */
+	  else if(!user)
+	  {
+		  f->eip = f->eax;
+		  f->eax = 0xffffffff;
+		  return;
+	  }
+  }
+
+
+
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
+  fail: /* jump here in the case of fail */
   printf ("Page fault at %p: %s error %s page in %s context.\n",
           fault_addr,
           not_present ? "not present" : "rights violation",

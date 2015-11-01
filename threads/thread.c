@@ -293,7 +293,7 @@ thread_exit (void)
 #ifdef USERPROG
   process_exit ();
 #endif
-
+  page_table_destroy(thread_current()->pg_table);
   /* Remove thread from all threads list, set our status to dying,
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
@@ -465,7 +465,8 @@ init_thread (struct thread *t, const char *name, int priority)
 
   memset (t, 0, sizeof *t);
   t->status = THREAD_BLOCKED;
-	t->proc = NULL;
+  t->proc = NULL;
+  t->pg_table = page_table_create();
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;

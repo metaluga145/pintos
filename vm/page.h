@@ -6,7 +6,10 @@
 #include "threads/thread.h"
 #include "filesys/file.h"
 
-typedef unsigned char flag_t;
+typedef uint8_t flag_t;
+typedef page_table_t struct hash*;
+
+#define MAX_STACK_SIZE (1 << 23)
 
 struct page
 {
@@ -16,7 +19,8 @@ struct page
 	flag_t flags;
 #define PG_WRITABLE	0x1
 #define PG_FILE		0x2
-#define PG_PINNED	0x4
+#define PG_PINNED	0x4	// I don't see the point when it's needed. I created this, because manual says so. Will remove later, if pass all tests
+#define PG_SWAPPED	0x8
 
 	struct thread* thread;
 
@@ -30,13 +34,12 @@ struct page
 	struct hash_elem elem;
 };
 
-struct page_table
-{
-	struct hash table;
-};
 
+page_table_t page_table_create(void);
+void page_table_destroy(page_table_t);
 
-struct page_table* page_table_create(void);
-void page_table_destroy(struct page_table*);
+struct page* page_construct(void*, flag_t);
+struct page* page_lookup(void*);
+bool page_push_stack(void*);
 
 #endif
