@@ -7,7 +7,6 @@
 #include "filesys/file.h"
 
 typedef uint8_t flag_t;
-typedef page_table_t struct hash*;
 
 #define MAX_STACK_SIZE (1 << 23)
 
@@ -35,11 +34,12 @@ struct page
 };
 
 
-page_table_t page_table_create(void);
-void page_table_destroy(page_table_t);
+struct hash* page_table_create(void);
+void page_table_destroy(struct hash*);
 
 struct page* page_construct(void*, flag_t);
 struct page* page_lookup(void*);
+bool page_load(struct page*);
 bool page_push_stack(void*);
 
 #endif

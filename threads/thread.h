@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "vm/page.h"
 
 struct process;	// circular dependency resolution with "process.h"
 struct page_table; // circular dependency resolution with "page.h"
@@ -101,7 +102,7 @@ struct thread
     struct process* proc;				/* pointer to a process. owned by process.h */
 #endif
 
-    page_table_t pg_table;
+    struct hash* pg_table;
     void* esp;
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */

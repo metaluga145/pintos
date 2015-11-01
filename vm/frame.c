@@ -3,6 +3,7 @@
 #include "threads/malloc.h"
 #include <list.h>
 #include <hash.h>
+#include <string.h>
 #include "threads/vaddr.h"
 #include "userprog/pagedir.h"
 
