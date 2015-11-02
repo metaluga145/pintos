@@ -26,7 +26,7 @@ void swap_init(void)
 
 void swap_out(struct page* pg)
 {
-printf("page_out called\n");
+//printf("page_out called\n");
 	ASSERT(pg != NULL);
 	ASSERT(pg->paddr != NULL);	// cannot swap out a swapped page!
 
@@ -40,7 +40,7 @@ printf("page_out called\n");
 	for(; i < SECTORS_PER_PAGE; ++i)
 		 block_write(swap_block, swap_base + i, (uint8_t*)pg->paddr + (i * BLOCK_SECTOR_SIZE));
 
-printf("page swapped out from %p to %u\n", pg->paddr, idx);
+//printf("page swapped out from %p to %u\n", pg->paddr, idx);
 
 	pg->flags |= PG_SWAPPED;
 	pg->swap_idx = idx;
@@ -48,7 +48,7 @@ printf("page swapped out from %p to %u\n", pg->paddr, idx);
 
 void swap_in(struct page* pg)
 {
-printf("page_in called\n");
+//printf("page_in called\n");
 	ASSERT(pg != NULL);
 	ASSERT(pg->paddr != NULL);	// frame must be allocated
 	ASSERT(pg->swap_idx != BITMAP_ERROR);
@@ -61,13 +61,13 @@ printf("page_in called\n");
 	lock_acquire(&swap_table_lock);
 	bitmap_set(swap_table, pg->swap_idx, false);
 	lock_release(&swap_table_lock);
-printf("page swapped in from %u to %p\n", pg->swap_idx, pg->paddr);
+//printf("page swapped in from %u to %p\n", pg->swap_idx, pg->paddr);
 	pg->swap_idx = BITMAP_ERROR;
 }
 
 void swap_free(struct page* pg)
 {
-printf("swap freed %u\n", pg->swap_idx);
+//printf("swap freed %u\n", pg->swap_idx);
 	lock_acquire(&swap_table_lock);
 	bitmap_set(swap_table, pg->swap_idx, false);
 	lock_release(&swap_table_lock);

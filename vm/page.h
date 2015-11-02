@@ -28,6 +28,7 @@ struct page
 
 	struct file* file;
 	uint32_t read_bytes;
+	uint32_t zero_bytes;
 	off_t ofs;
 
 	struct hash_elem elem;

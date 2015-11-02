@@ -13,9 +13,9 @@ static char buf[SIZE];
 void
 test_main (void)
 {
-printf("1\n");
+printf("hi1\n");
   struct arc4 arc4;
-printf("2\n");
+printf("hi2\n");
   size_t i;
 
   /* Initialize to 0x5a. */

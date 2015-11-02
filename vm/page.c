@@ -48,7 +48,7 @@ static bool page_cmp (const struct hash_elem *a, const struct hash_elem *b, void
 
 struct page* page_construct(void* vaddr, flag_t flags)
 {
-printf("page_construct called\n");
+//printf("page_construct called\n");
 	ASSERT(vaddr != NULL);
 
 	struct page* new_pg = malloc(sizeof(struct page));
@@ -63,14 +63,13 @@ printf("page_construct called\n");
 	new_pg->read_bytes = 0;
 	new_pg->ofs = 0;
 	hash_insert(new_pg->thread->pg_table, &new_pg->elem);
-printf("new page at vaddr = %p, writable = %u\n", vaddr, flags & PG_WRITABLE);
+//printf("new page at vaddr = %p, writable = %u\n", vaddr, flags & PG_WRITABLE);
 	return new_pg;
 }
 
 bool page_push_stack(void* vaddr)
 {
-printf("page_push_stack called\n");
-printf("pushing stack to %p\n", vaddr);
+//printf("pushing stack to %p\n", vaddr);
 	vaddr = pg_round_down(vaddr);
 	if ((unsigned)PHYS_BASE - (unsigned)vaddr > (unsigned)MAX_STACK_SIZE) return false;
 	struct page* newpg = page_construct(vaddr, PG_WRITABLE);
@@ -87,7 +86,7 @@ printf("pushing stack to %p\n", vaddr);
 
 struct page* page_lookup(void* vaddr)
 {
-printf("page_lookup called\n");
+//printf("page_lookup called\n");
 	struct hash* pg_table = thread_current()->pg_table;
 	struct hash_elem* e;
 	struct page pg;
@@ -99,16 +98,21 @@ printf("page_lookup called\n");
 
 bool page_load(struct page* pg)
 {
-printf("page_load called\n");
+//printf("page_load called\n");
 	ASSERT(pg != NULL);
 
 	pg->paddr = frame_alloc(pg, PAL_USER);
 
 	if(pg->flags & PG_FILE)
 	{
+//printf("loading from file\n");
 		if(file_read_at(pg->file, pg->paddr, pg->read_bytes, pg->ofs) != (int)pg->read_bytes)
 			goto fail;
-		memset(pg->paddr + pg->read_bytes, 0, PGSIZE - pg->read_bytes);
+//printf("reading OK\n");
+//printf("setting at %p\n", (uint8_t*)pg->paddr + pg->read_bytes);
+		memset((uint8_t*)pg->paddr + pg->read_bytes, 0, PGSIZE - pg->zero_bytes);
+//printf("setting OK\n");
+
 	}
 	else swap_in(pg);
 
@@ -125,7 +129,7 @@ printf("page_load called\n");
 
 static void page_destructor(struct hash_elem *e, void *aux)
 {
-printf("page_destruct called\n");
+//printf("page_destruct called\n");
 	struct page* page = hash_entry(e, struct page, elem);
 	if (page->swap_idx != BITMAP_ERROR)
 		swap_free(page);
