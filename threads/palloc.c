@@ -117,6 +117,7 @@ palloc_get_page (enum palloc_flags flags)
 void
 palloc_free_multiple (void *pages, size_t page_cnt) 
 {
+//printf("palloc: deallocating at %p\n", pages);
   struct pool *pool;
   size_t page_idx;
 

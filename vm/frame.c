@@ -36,11 +36,13 @@ void frame_init(size_t user_page_limit)
 	lock_init(&frame_list_lock);
 
 	base = free_start + kernel_pages * PGSIZE;
+printf("frame_init(): array = %p, base = %p\n", frames_all, base);
 }
 
 void* frame_alloc(struct page* page, enum palloc_flags flags)
 {
-	ASSERT((flags & PAL_USER) != 0);		// this function is only for users
+printf("frame_alloc called\n");
+	ASSERT((flags & PAL_USER) != 0);	// this function is only for users
 
 	struct frame* frame = NULL;
 	void* paddr = palloc_get_page(flags);
@@ -49,26 +51,30 @@ void* frame_alloc(struct page* page, enum palloc_flags flags)
 	if (!paddr)
 	{
 		frame = frame_evict();			// performs swapping if needed
-		size_t frame_idx = (frame - frames_all)/sizeof(struct frame);
+		size_t frame_idx = ((unsigned)frame - (unsigned)frames_all)/sizeof(struct frame);
 		paddr = base + frame_idx * PGSIZE;
 		if (flags & PAL_ZERO) memset (paddr, 0, PGSIZE);
+printf("frame evicted at %p, faddr = %p, idx = %u for vaddr = %p\n", paddr, frame, frame_idx, page->vaddr);
 	}
 	else
 	{
-		size_t frame_idx = (paddr - base)/PGSIZE;
+		size_t frame_idx = ((unsigned)paddr - (unsigned)base)/PGSIZE;
 		frame = &frames_all[frame_idx];
 		list_push_back(&frame_list, &frame->list_elem);
+printf("frame from pool at %p for vaddr = %p\n", paddr, page->vaddr);
 	}
 
 	frame->page = page;
-
+	page->paddr = paddr;
+	
 	lock_release(&frame_list_lock);
-
+printf("frame_alloc finished\n");
 	return paddr;
 }
 
 void frame_free(void* paddr)
 {
+printf("frame_free called\n");
 	ASSERT(paddr != NULL);
 	size_t frame_idx = (paddr - base)/PGSIZE;
 
@@ -76,13 +82,16 @@ void frame_free(void* paddr)
 
 	frames_all[frame_idx].page = NULL;
 	list_remove(&frames_all[frame_idx].list_elem);
-	palloc_free_page(paddr);
+	//no need. Frame will be deallocated in pagedir_destroy
+	//palloc_free_page(paddr);
 
 	lock_release(&frame_list_lock);
+printf("frame freed at %p\n", paddr);
 }
 
 static struct frame* frame_evict(void)
 {
+printf("frame_evict called\n");
 	struct frame* evicted_frame = NULL;
 	struct list_elem* e = list_begin(&frame_list);
 	struct page* candidate_page;
@@ -104,7 +113,7 @@ static struct frame* frame_evict(void)
 		list_push_back(&frame_list, &candidate_frame->list_elem);
 	}
 
-	if (pagedir_is_dirty(candidate_page->thread->pagedir, candidate_page->vaddr))
+	if (pagedir_is_dirty(candidate_page->thread->pagedir, candidate_page->vaddr) || !(candidate_page->flags & PG_FILE))
 	{
 		swap_out(candidate_page);
 	}

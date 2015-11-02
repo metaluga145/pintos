@@ -207,7 +207,7 @@ start_process (void *args_)
 	struct args_tmp *args = args_;
   struct intr_frame if_;
   bool success;
-
+	thread_current()->pg_table = page_table_create();
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
@@ -654,6 +654,7 @@ static bool
 load_segment (struct file *file, off_t ofs, uint8_t *upage,
               uint32_t read_bytes, uint32_t zero_bytes, bool writable) 
 {
+printf("load_segment called\n");
   ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
@@ -669,7 +670,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
       /* Get a page of memory. */
       //uint8_t *kpage = palloc_get_page (PAL_USER);
-      struct page* pg = page_construct(upage, writable & PG_FILE);
+      struct page* pg = page_construct(upage, writable | PG_FILE);
       if(!pg) return false;		/* malloc failed to allocate kernel space */
 
       uint8_t* kpage = frame_alloc(pg, PAL_USER);
@@ -710,6 +711,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 static bool
 setup_stack (void **esp, struct args_tmp* args)
 {
+printf("stack_setup called\n");
   uint8_t *kpage;
   bool success = false;
   /* obtain and install a new page */
@@ -741,6 +743,7 @@ setup_stack (void **esp, struct args_tmp* args)
     	  /* final value of esp */
     	  *esp = esp_argv;
       }
+printf("stack_setup finished\n");
   return success;
 }
 

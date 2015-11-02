@@ -9,6 +9,7 @@
 #include "userprog/pagedir.h"
 
 #include <string.h> // memset
+#include "bitmap.h"
 
 /* --------------- page table --------------- */
 static unsigned page_hash_func(const struct hash_elem *e, void *aux);
@@ -25,8 +26,11 @@ struct hash* page_table_create(void)
 
 void page_table_destroy(struct hash* table)
 {
-	hash_destroy(table, page_destructor);
-	free(table);
+	if(table)
+	{
+		hash_destroy(table, page_destructor);
+		free(table);
+	}
 }
 
 static unsigned page_hash_func(const struct hash_elem *e, void *aux)
@@ -44,6 +48,7 @@ static bool page_cmp (const struct hash_elem *a, const struct hash_elem *b, void
 
 struct page* page_construct(void* vaddr, flag_t flags)
 {
+printf("page_construct called\n");
 	ASSERT(vaddr != NULL);
 
 	struct page* new_pg = malloc(sizeof(struct page));
@@ -53,21 +58,23 @@ struct page* page_construct(void* vaddr, flag_t flags)
 	new_pg->paddr = NULL;
 	new_pg->flags = flags;
 	new_pg->thread = thread_current();
+	new_pg->swap_idx = BITMAP_ERROR;
 	new_pg->file = NULL;
 	new_pg->read_bytes = 0;
 	new_pg->ofs = 0;
 	hash_insert(new_pg->thread->pg_table, &new_pg->elem);
-
+printf("new page at vaddr = %p, writable = %u\n", vaddr, flags & PG_WRITABLE);
 	return new_pg;
 }
 
 bool page_push_stack(void* vaddr)
 {
+printf("page_push_stack called\n");
+printf("pushing stack to %p\n", vaddr);
 	vaddr = pg_round_down(vaddr);
-	if (PHYS_BASE - vaddr > MAX_STACK_SIZE) return false;
-
+	if ((unsigned)PHYS_BASE - (unsigned)vaddr > (unsigned)MAX_STACK_SIZE) return false;
 	struct page* newpg = page_construct(vaddr, PG_WRITABLE);
-	newpg->paddr = frame_alloc(newpg, PAL_USER & PAL_ZERO);
+	newpg->paddr = frame_alloc(newpg, PAL_USER | PAL_ZERO);
 
 	if(!install_page(newpg->vaddr, newpg->paddr, PG_WRITABLE))
 	{
@@ -80,6 +87,7 @@ bool page_push_stack(void* vaddr)
 
 struct page* page_lookup(void* vaddr)
 {
+printf("page_lookup called\n");
 	struct hash* pg_table = thread_current()->pg_table;
 	struct hash_elem* e;
 	struct page pg;
@@ -91,6 +99,7 @@ struct page* page_lookup(void* vaddr)
 
 bool page_load(struct page* pg)
 {
+printf("page_load called\n");
 	ASSERT(pg != NULL);
 
 	pg->paddr = frame_alloc(pg, PAL_USER);
@@ -116,8 +125,9 @@ bool page_load(struct page* pg)
 
 static void page_destructor(struct hash_elem *e, void *aux)
 {
+printf("page_destruct called\n");
 	struct page* page = hash_entry(e, struct page, elem);
-	if (page->flags & PG_SWAPPED)
+	if (page->swap_idx != BITMAP_ERROR)
 		swap_free(page);
 	else frame_free(page->paddr);
 

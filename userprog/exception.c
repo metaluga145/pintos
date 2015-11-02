@@ -5,6 +5,7 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "userprog/syscall.h"
+#include "threads/vaddr.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -162,44 +163,44 @@ page_fault (struct intr_frame *f)
 
   if(not_present)
   {
+printf("not present\n");
 	  struct page* pg = page_lookup(fault_addr);
-	  if(!pg)
-		  goto fail;
-	  page_load(pg);
-	  return;
-  }
-  else
-  {
-	  void* esp;
-	  if (user)
-		  esp = f->esp;
-	  else esp = thread_current()->esp;
-
-	  /*check if it was a stack access */
-	  if (fault_addr >= esp - 32)
+	  if(pg)
 	  {
-		  if(!page_push_stack(fault_addr))
+printf("page exists\n");
+		page_load(pg);
+printf("loaded\n");
+		return;
+	  } else
+	  {
+		void* esp;
+	  	if (user)
+		  	esp = f->esp;
+	  	else esp = thread_current()->esp;
+printf("kernel esp = %p, user esp = %p\n", f->esp, thread_current()->esp);
+	  	/*check if it was a stack access */
+printf("no such page: esp = %p, fauld_addr = %p\n", esp, fault_addr);
+	  	if (fault_addr < PHYS_BASE && fault_addr >= esp - 32)
+	  	{
+printf("stack access\n");
+		  	if(!page_push_stack(fault_addr))
 			  goto fail;
-		  return;
-	  }
-	  /*
-	   * if it was not a stack access, and it was from kernel side,
-	   * then failed test of user pointer
-	   */
-	  else if(!user)
-	  {
-		  f->eip = f->eax;
-		  f->eax = 0xffffffff;
-		  return;
+		  	return;
+	  	}
 	  }
   }
-
 
 
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */
   fail: /* jump here in the case of fail */
+  if(!user)
+  {
+	f->eip = f->eax;
+	f->eax = 0xffffffff;
+	return;
+  }
   printf ("Page fault at %p: %s error %s page in %s context.\n",
           fault_addr,
           not_present ? "not present" : "rights violation",
