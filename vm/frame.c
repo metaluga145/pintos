@@ -54,14 +54,14 @@ void* frame_alloc(struct page* page, enum palloc_flags flags)
 		size_t frame_idx = ((unsigned)frame - (unsigned)frames_all)/sizeof(struct frame);
 		paddr = base + frame_idx * PGSIZE;
 		if (flags & PAL_ZERO) memset (paddr, 0, PGSIZE);
-//printf("frame evicted at %p, faddr = %p, idx = %u for vaddr = %p\n", paddr, frame, frame_idx, page->vaddr);
+printf("frame evicted at %p, faddr = %p, idx = %u for vaddr = %p\n", paddr, frame, frame_idx, page->vaddr);
 	}
 	else
 	{
 		size_t frame_idx = ((unsigned)paddr - (unsigned)base)/PGSIZE;
 		frame = &frames_all[frame_idx];
 		list_push_back(&frame_list, &frame->list_elem);
-//printf("frame from pool at %p for vaddr = %p\n", paddr, page->vaddr);
+printf("frame from pool at %p for vaddr = %p\n", paddr, page->vaddr);
 	}
 
 	frame->page = page;
@@ -113,7 +113,7 @@ static struct frame* frame_evict(void)
 		list_push_back(&frame_list, &candidate_frame->list_elem);
 	}
 
-	if (pagedir_is_dirty(candidate_page->thread->pagedir, candidate_page->vaddr) || !(candidate_page->flags & PG_FILE))
+	if (pagedir_is_dirty(candidate_page->thread->pagedir, candidate_page->vaddr) || (candidate_page->flags & PG_SWAPPED))
 	{
 		swap_out(candidate_page);
 	}

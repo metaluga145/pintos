@@ -160,17 +160,17 @@ page_fault (struct intr_frame *f)
     f->eax = 0xffffffff;
     return;
   } */
-
+if (write) printf("writing\n");
   if(not_present)
   {
-//printf("not present\n");
+printf("not present\n");
 	  struct page* pg = page_lookup(fault_addr);
 	  if(pg)
 	  {
-//printf("page exists\n");
+printf("page exists\n");
 		if(!page_load(pg))
 			PANIC("page cannot be loaded\n");
-//printf("loaded\n");
+printf("loaded\n");
 		return;
 	  } else
 	  {
@@ -180,10 +180,10 @@ page_fault (struct intr_frame *f)
 	  	else esp = thread_current()->esp;
 //printf("kernel esp = %p, user esp = %p\n", f->esp, thread_current()->esp);
 	  	/*check if it was a stack access */
-//printf("no such page: esp = %p, fauld_addr = %p\n", esp, fault_addr);
+printf("no such page: esp = %p, fauld_addr = %p\n", esp, fault_addr);
 	  	if (fault_addr < PHYS_BASE && fault_addr >= esp - 32)
 	  	{
-//printf("stack access\n");
+printf("stack access\n");
 		  	if(!page_push_stack(fault_addr))
 			  goto fail;
 		  	return;
