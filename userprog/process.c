@@ -670,7 +670,6 @@ printf("loading segment\n");
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
       /* Get a page of memory. */
-      //uint8_t *kpage = palloc_get_page (PAL_USER);
       struct page* pg = page_construct(upage, writable | PG_FILE);
       if(!pg) return false;		/* malloc failed to allocate kernel space */
 
@@ -686,6 +685,7 @@ printf("loading segment\n");
         return false;
 
       /* Load this page. */
+
       if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
         {
           frame_free (kpage);
