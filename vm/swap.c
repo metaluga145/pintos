@@ -40,7 +40,7 @@ void swap_out(struct page* pg)
 	for(; i < SECTORS_PER_PAGE; ++i)
 		 block_write(swap_block, swap_base + i, (uint8_t*)pg->paddr + (i * BLOCK_SECTOR_SIZE));
 
-printf("page vaddr = %p swapped out from %p to %u, val = %u\n", pg->vaddr, pg->paddr, idx, (*((uint8_t*)pg->paddr)));
+//printf("page vaddr = %p swapped out from %p to %u, val = %u\n", pg->vaddr, pg->paddr, idx, (*((uint8_t*)pg->paddr)));
 
 	pg->flags |= PG_SWAPPED;
 	pg->swap_idx = idx;
@@ -61,7 +61,7 @@ void swap_in(struct page* pg)
 	lock_acquire(&swap_table_lock);
 	bitmap_set(swap_table, pg->swap_idx, false);
 	lock_release(&swap_table_lock);
-printf("page vaddr = %p swapped in from %u to %p, val = %u\n",pg->vaddr, pg->swap_idx, pg->paddr, (*((uint8_t*)pg->paddr)));
+//printf("page vaddr = %p swapped in from %u to %p, val = %u\n",pg->vaddr, pg->swap_idx, pg->paddr, (*((uint8_t*)pg->paddr)));
 	pg->swap_idx = BITMAP_ERROR;
 }
 

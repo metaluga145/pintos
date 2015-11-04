@@ -51,7 +51,6 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f)
 {
-//printf("syscall_handler called\n");
 	/*
 	 * get the system call number and get all appropriate arguments.
 	 * type conversion is not preserved in several places, so there might be warnings about it.

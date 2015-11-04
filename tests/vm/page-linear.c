@@ -15,14 +15,14 @@ static char buf[SIZE];
 void
 test_main (void)
 {
-printf("hi1\n");
+//printf("hi1\n");
   struct arc4 arc4;
-printf("hi2\n");
+//printf("hi2\n");
   size_t i;
 
   /* Initialize to 0x5a. */
   msg ("initialize");
-printf("buf = %p\n", buf);
+//printf("buf = %p\n", buf);
 /*
 for(i = 0; i < SIZE; i+= PGS)
 {
@@ -58,5 +58,5 @@ printf("char = %u\n", *(buf+i+1));
   for (i = 0; i < SIZE; i++)
     if (buf[i] != 0x5a)
       fail ("byte %zu != 0x5a, %p", i, (buf+i));
-printf("finished\n");
+//printf("finished\n");
 }

@@ -168,6 +168,7 @@ init_pool (struct pool *p, void *base, size_t page_cnt, const char *name)
   lock_init (&p->lock);
   p->used_map = bitmap_create_in_buf (page_cnt, base, bm_pages * PGSIZE);
   p->base = base + bm_pages * PGSIZE;
+printf("pool base = %p\n", p->base);
 }
 
 /* Returns true if PAGE was allocated from POOL,

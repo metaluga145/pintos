@@ -366,6 +366,7 @@ process_exit (void)
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
+  page_table_destroy(thread_current()->pg_table);
   pd = cur->pagedir;
   if (pd != NULL) 
     {
@@ -654,7 +655,7 @@ static bool
 load_segment (struct file *file, off_t ofs, uint8_t *upage,
               uint32_t read_bytes, uint32_t zero_bytes, bool writable) 
 {
-printf("load_segment called, writable = %u\n", writable);
+//printf("load_segment called, writable = %u\n", writable);
   ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
@@ -665,11 +666,12 @@ printf("load_segment called, writable = %u\n", writable);
       /* Calculate how to fill this page.
          We will read PAGE_READ_BYTES bytes from FILE
          and zero the final PAGE_ZERO_BYTES bytes. */
-printf("loading segment\n");
+//printf("loading segment\n");
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
       /* Get a page of memory. */
+      //uint8_t *kpage = palloc_get_page (PAL_USER);
       struct page* pg = page_construct(upage, writable | PG_FILE);
       if(!pg) return false;		/* malloc failed to allocate kernel space */
 
@@ -685,7 +687,6 @@ printf("loading segment\n");
         return false;
 
       /* Load this page. */
-
       if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
         {
           frame_free (kpage);
@@ -714,7 +715,7 @@ printf("loading segment\n");
 static bool
 setup_stack (void **esp, struct args_tmp* args)
 {
-printf("stack_setup called\n");
+//printf("stack_setup called\n");
   uint8_t *kpage;
   bool success = false;
   /* obtain and install a new page */

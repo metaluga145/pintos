@@ -63,17 +63,16 @@ struct page* page_construct(void* vaddr, flag_t flags)
 	new_pg->read_bytes = 0;
 	new_pg->ofs = 0;
 	hash_insert(new_pg->thread->pg_table, &new_pg->elem);
-printf("new page at vaddr = %p, writable = %u\n", vaddr, flags & PG_WRITABLE);
+//printf("new page at vaddr = %p, writable = %u\n", vaddr, flags & PG_WRITABLE);
 	return new_pg;
 }
 
 bool page_push_stack(void* vaddr)
 {
-printf("pushing stack to %p\n", vaddr);
+//printf("pushing stack to %p\n", vaddr);
 	vaddr = pg_round_down(vaddr);
 	if ((unsigned)PHYS_BASE - (unsigned)vaddr > (unsigned)MAX_STACK_SIZE) return false;
 	struct page* newpg = page_construct(vaddr, PG_WRITABLE | PG_SWAPPED);
-if(!intr_context()) newpg->flags |= PG_PINNED;
 	newpg->paddr = frame_alloc(newpg, PAL_USER | PAL_ZERO);
 
 	if(!install_page(newpg->vaddr, newpg->paddr, PG_WRITABLE))
@@ -101,17 +100,18 @@ bool page_load(struct page* pg)
 {
 //printf("page_load called\n");
 	ASSERT(pg != NULL);
-pg->flags |= PG_PINNED;
+
 	pg->paddr = frame_alloc(pg, PAL_USER);
 
 	if((pg->flags & PG_FILE) && (pg->swap_idx == BITMAP_ERROR))
-	{printf("loading from file\n");
+	{
+//printf("loading from file to %p, finish at %p\n", pg->paddr, (uint8_t*)(pg->paddr) + pg->read_bytes);
 		if(file_read_at(pg->file, pg->paddr, pg->read_bytes, pg->ofs) != (int)pg->read_bytes)
 			goto fail;
 //printf("reading OK\n");
 //printf("setting at %p\n", (uint8_t*)pg->paddr + pg->read_bytes);
-		memset((uint8_t*)pg->paddr + pg->read_bytes, 0, PGSIZE - pg->zero_bytes);
-//printf("setting OK\n");
+		memset((uint8_t*)pg->paddr + pg->read_bytes, 0, PGSIZE - pg->read_bytes);
+//printf("setting %u bytes, read_bytes = %u, zero_bytes = %u\n", PGSIZE - pg->zero_bytes,pg->read_bytes, pg->zero_bytes);
 
 	}
 	else swap_in(pg);

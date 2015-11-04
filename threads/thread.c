@@ -293,7 +293,6 @@ thread_exit (void)
 #ifdef USERPROG
   process_exit ();
 #endif
-  page_table_destroy(thread_current()->pg_table);
   /* Remove thread from all threads list, set our status to dying,
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */

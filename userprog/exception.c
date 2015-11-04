@@ -160,21 +160,16 @@ page_fault (struct intr_frame *f)
     f->eax = 0xffffffff;
     return;
   } */
-  printf ("Page fault at %p: %s error %s page in %s context.\n",
-          fault_addr,
-          not_present ? "not present" : "rights violation",
-          write ? "writing" : "reading",
-          user ? "user" : "kernel");
   if(not_present)
   {
 	  struct page* pg = page_lookup(fault_addr);
 	  if(pg)
 	  {
-printf("page found\n");
+//printf("page found\n");
 		if(!page_load(pg))
 			PANIC("page cannot be loaded\n");
-pg->flags &= ~PG_PINNED;
-printf("page loaded\n");
+//printf("page loaded\n");
+
 		return;
 	  } else
 	  {
