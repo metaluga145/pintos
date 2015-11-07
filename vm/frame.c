@@ -13,16 +13,27 @@ static struct frame
 	struct list_elem list_elem;	// element of the list of frames
 };
 
-static struct list frame_list;
-static struct lock frame_list_lock;
+static struct list frame_list;		// list to implement second-chance algorithm
+static struct lock frame_list_lock;	// lock for the frame list
 
-static struct frame* frames_all;
-static void* base;
+static struct frame* frames_all;	// array of all frames
+static void* base;					// base physical address for user physical memory
 
 static struct frame* frame_evict(void);
 
+/*
+ * initializes frame unit.
+ * calculates base physical address and allocates array of frames.
+ * real number of available frames is smaller, because some pages are used
+ * by palloc unit for bit map. No need to worry about the waste of space.
+ */
 void frame_init(size_t user_page_limit)
 {
+	/*
+	 * this part is taken from palloc.c init(),
+	 * because I could not solve dependency resolution of files,
+	 * so I decided to just copy calculations.
+	 */
 	uint8_t *free_start = ptov (1024 * 1024);
 	uint8_t *free_end = ptov (init_ram_pages * PGSIZE);
 	size_t free_pages = (free_end - free_start) / PGSIZE;
@@ -31,71 +42,70 @@ void frame_init(size_t user_page_limit)
 	  user_pages = user_page_limit;
 	size_t kernel_pages = free_pages - user_pages;
 
+	/* initialize variables */
 	list_init(&frame_list);
-	frames_all = malloc(user_pages*sizeof(struct frame));
 	lock_init(&frame_list_lock);
+	frames_all = malloc(user_pages*sizeof(struct frame));
 
 	base = free_start + kernel_pages * PGSIZE;
-//printf("frame_init(): array = %p, base = %p\n", frames_all, base);
 }
 
+/* allocates a new frame for a page */
 void* frame_alloc(struct page* page, enum palloc_flags flags)
 {
-//printf("frame_alloc called\n");
 	ASSERT((flags & PAL_USER) != 0);	// this function is only for users
 
 	struct frame* frame = NULL;
-	void* paddr = palloc_get_page(flags);
+	void* paddr = palloc_get_page(flags);	// try to obtain addr using palloc
 
 	lock_acquire(&frame_list_lock);
 	if (!paddr)
 	{
-		frame = frame_evict();			// performs swapping if needed
+		// if no available frames, evict the frame
+		frame = frame_evict();										// performs swapping if needed
 		size_t frame_idx = ((unsigned)frame - (unsigned)frames_all)/sizeof(struct frame);
-		paddr = base + frame_idx * PGSIZE;
-		if (flags & PAL_ZERO) memset (paddr, 0, PGSIZE);
-//printf("frame evicted at %p, faddr = %p, idx = %u for vaddr = %p\n", paddr, frame, frame_idx, page->vaddr);
+		paddr = base + frame_idx * PGSIZE;							// calculate the physical address in the memory
+		if (flags & PAL_ZERO) memset (paddr, 0, PGSIZE);			// if needed, set to 0
 	}
 	else
 	{
+		// if frame was allocated by palloc, just add it to the list
 		size_t frame_idx = ((unsigned)paddr - (unsigned)base)/PGSIZE;
-		frame = &frames_all[frame_idx];
+		frame = frames_all + frame_idx;
 		list_push_back(&frame_list, &frame->list_elem);
-//printf("frame from pool at %p for vaddr = %p\n", paddr, page->vaddr);
 	}
+	lock_release(&frame_list_lock);
 
+	// set values
 	frame->page = page;
 	page->paddr = paddr;
 	
-	lock_release(&frame_list_lock);
-//printf("frame_alloc finished\n");
-	return paddr;
+	return paddr;	// return physical address of allocated frame
 }
 
+/* releases the frame. for now, it is used only when the page table is being destroyed */
 void frame_free(void* paddr)
 {
-//printf("frame_free called\n");
-	ASSERT(paddr != NULL);
-	size_t frame_idx = (paddr - base)/PGSIZE;
+	if(!paddr) return;
+	size_t frame_idx = ((unsigned)paddr - (unsigned)base)/PGSIZE;
 
 	lock_acquire(&frame_list_lock);
 
 	frames_all[frame_idx].page = NULL;
 	list_remove(&frames_all[frame_idx].list_elem);
-	//no need. Frame will be deallocated in pagedir_destroy
-	//palloc_free_page(paddr);
+	//no need to call palloc_free. Frame will be deallocated in pagedir_destroy.
 
 	lock_release(&frame_list_lock);
-//printf("frame freed at %p\n", paddr);
 }
 
+/* evicts a frame using second-chance algorithm */
+/* in all tests it works like FIFO ( I checked it during debugging) */
 static struct frame* frame_evict(void)
 {
-//printf("frame_evict called\n");
 	struct frame* evicted_frame = NULL;
 	struct list_elem* e = list_begin(&frame_list);
 	struct page* candidate_page;
-
+	// while frame is not evicted
 	while(!evicted_frame)
 	{
 		struct frame* candidate_frame = list_entry(e, struct frame, list_elem);
@@ -103,6 +113,7 @@ static struct frame* frame_evict(void)
 
 		if(!(candidate_page->flags & PG_PINNED))
 		{
+			// if page is accessed, then don't evict it, but clear the flag and push to the end of the list
 			if(pagedir_is_accessed(candidate_page->thread->pagedir, candidate_page->vaddr))
 				pagedir_set_accessed(candidate_page->thread->pagedir, candidate_page->vaddr, false);
 			else
@@ -113,11 +124,13 @@ static struct frame* frame_evict(void)
 		list_push_back(&frame_list, &candidate_frame->list_elem);
 	}
 
+	// if the page is dirty or it should be swapped, then swap it
 	if (pagedir_is_dirty(candidate_page->thread->pagedir, candidate_page->vaddr) || (candidate_page->flags & PG_SWAPPED))
 	{
 		swap_out(candidate_page);
 	}
 
+	// remove page from pagedir, so that the next time access will raise exception
 	pagedir_clear_page(candidate_page->thread->pagedir, candidate_page->vaddr);
 	return evicted_frame;
 }

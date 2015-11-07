@@ -102,8 +102,8 @@ struct thread
     struct process* proc;				/* pointer to a process. owned by process.h */
 #endif
 
-    struct hash* pg_table;
-    void* esp;
+    struct hash* pg_table;				/* page table represented as a hash table */
+    void* esp;							/* esp for checking stack access from system calls */
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };

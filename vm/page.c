@@ -14,8 +14,8 @@
 /* --------------- page table --------------- */
 static unsigned page_hash_func(const struct hash_elem *e, void *aux);
 static bool page_cmp (const struct hash_elem *a, const struct hash_elem *b, void *aux);
-static void page_destructor(struct hash_elem *e, void *aux);
 
+/* creates a page table for each process */
 struct hash* page_table_create(void)
 {
 	struct hash* newpgt = malloc(sizeof(struct hash));
@@ -24,6 +24,10 @@ struct hash* page_table_create(void)
 	return newpgt;
 }
 
+/*
+ * destroys a given page table.
+ * all resources are freed if needed
+ */
 void page_table_destroy(struct hash* table)
 {
 	if(table)
@@ -33,12 +37,14 @@ void page_table_destroy(struct hash* table)
 	}
 }
 
+/* hash function for page table. uses internal hash function from library */
 static unsigned page_hash_func(const struct hash_elem *e, void *aux)
 {
 	struct page* pg = hash_entry(e, struct page, elem);
 	return hash_bytes(&pg->vaddr, sizeof(pg->vaddr));
 }
 
+/* compares two pages by their vaddr fields */
 static bool page_cmp (const struct hash_elem *a, const struct hash_elem *b, void *aux)
 {
 	return hash_entry(a, struct page, elem)->vaddr < hash_entry(b, struct page, elem)->vaddr;
@@ -46,14 +52,16 @@ static bool page_cmp (const struct hash_elem *a, const struct hash_elem *b, void
 
 /* --------------- page --------------- */
 
+/* constructs a new instance of the page */
 struct page* page_construct(void* vaddr, flag_t flags)
 {
-//printf("page_construct called\n");
+	/* page cannot be allocated at virtual addr == NULL */
 	ASSERT(vaddr != NULL);
 
 	struct page* new_pg = malloc(sizeof(struct page));
 	if(!new_pg) return NULL;
 
+	/* set fields */
 	new_pg->vaddr = vaddr;
 	new_pg->paddr = NULL;
 	new_pg->flags = flags;
@@ -62,20 +70,24 @@ struct page* page_construct(void* vaddr, flag_t flags)
 	new_pg->file = NULL;
 	new_pg->read_bytes = 0;
 	new_pg->ofs = 0;
+	/* add page to a page table */
 	hash_insert(new_pg->thread->pg_table, &new_pg->elem);
-//printf("new page at vaddr = %p, writable = %u\n", vaddr, flags & PG_WRITABLE);
+
 	return new_pg;
 }
 
+/*
+ * adds one page to the top of stack.
+ * used in proccess.c and exception.c
+ */
 bool page_push_stack(void* vaddr)
 {
-//printf("pushing stack to %p\n", vaddr);
-	vaddr = pg_round_down(vaddr);
-	if ((unsigned)PHYS_BASE - (unsigned)vaddr > (unsigned)MAX_STACK_SIZE) return false;
-	struct page* newpg = page_construct(vaddr, PG_WRITABLE | PG_SWAPPED);
-	newpg->paddr = frame_alloc(newpg, PAL_USER | PAL_ZERO);
+	vaddr = pg_round_down(vaddr);	// calculate page vaddr
+	if ((unsigned)PHYS_BASE - (unsigned)vaddr > (unsigned)MAX_STACK_SIZE) return false;	// check if stack has not reached it's maximum size
+	struct page* newpg = page_construct(vaddr, PG_WRITABLE | PG_SWAPPED);	// create a new page
+	newpg->paddr = frame_alloc(newpg, PAL_USER | PAL_ZERO);					// allocate frame for the page
 
-	if(!install_page(newpg->vaddr, newpg->paddr, PG_WRITABLE))
+	if(!install_page(newpg->vaddr, newpg->paddr, PG_WRITABLE))				// install new page
 	{
 		page_destructor(&newpg->elem, NULL);
 		return false;
@@ -84,9 +96,12 @@ bool page_push_stack(void* vaddr)
 	return true;
 }
 
+/*
+ * finds a page given virtual address.
+ * returns NULL if no such page.
+ */
 struct page* page_lookup(void* vaddr)
 {
-//printf("page_lookup called\n");
 	struct hash* pg_table = thread_current()->pg_table;
 	struct hash_elem* e;
 	struct page pg;
@@ -96,41 +111,45 @@ struct page* page_lookup(void* vaddr)
 	return e == NULL ? e : hash_entry(e, struct page, elem);
 }
 
+/*
+ * loads page into the memory.
+ * frame is allocated here.
+ */
 bool page_load(struct page* pg)
 {
-//printf("page_load called\n");
 	ASSERT(pg != NULL);
+
+	pg->flags |= PG_PINNED; // pin page for reading
 
 	pg->paddr = frame_alloc(pg, PAL_USER);
 
-	if((pg->flags & PG_FILE) && (pg->swap_idx == BITMAP_ERROR))
+	if(pg->swap_idx != BITMAP_ERROR) swap_in(pg);
+	else if(pg->flags & PG_FILE)
 	{
-//printf("loading from file to %p, finish at %p\n", pg->paddr, (uint8_t*)(pg->paddr) + pg->read_bytes);
 		if(file_read_at(pg->file, pg->paddr, pg->read_bytes, pg->ofs) != (int)pg->read_bytes)
 			goto fail;
-//printf("reading OK\n");
-//printf("setting at %p\n", (uint8_t*)pg->paddr + pg->read_bytes);
 		memset((uint8_t*)pg->paddr + pg->read_bytes, 0, PGSIZE - pg->read_bytes);
-//printf("setting %u bytes, read_bytes = %u, zero_bytes = %u\n", PGSIZE - pg->zero_bytes,pg->read_bytes, pg->zero_bytes);
-
 	}
-	else swap_in(pg);
+	else NOT_REACHED();
+
+	page->flags &= ~PG_PINNED;	// unpin page after it's read
 
 	if(!install_page(pg->vaddr, pg->paddr, pg->flags & PG_WRITABLE))
 	goto fail;
 
-	pagedir_set_dirty(thread_current()->pagedir, pg->vaddr, false);
 	return true; // page is loaded successfully
 
 	fail:
-PANIC("PAGE NOT INSTALLED");
 	frame_free(pg->paddr);
 	return false;
 }
 
-static void page_destructor(struct hash_elem *e, void *aux)
+/*
+ * destroys a page and frees resources, given a hash element of the page.
+ * also is used for destroying page table.
+ */
+void page_destructor(struct hash_elem *e, void *aux)
 {
-//printf("page_destruct called\n");
 	struct page* page = hash_entry(e, struct page, elem);
 	if (page->swap_idx != BITMAP_ERROR)
 		swap_free(page);

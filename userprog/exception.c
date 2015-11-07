@@ -149,40 +149,28 @@ page_fault (struct intr_frame *f)
   not_present = (f->error_code & PF_P) == 0;
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
-  /*
-   * if the page fault by the kernel,
-   * store eax to eip, and set eax to 0xffffffff,
-   * as it is told in the manual.
-   */
-  /* need to handle it in another part
-  if(!user) {
-    f->eip = f->eax;
-    f->eax = 0xffffffff;
-    return;
-  } */
+
   if(not_present)
   {
+	  /* if page is not present, try to find it */
 	  struct page* pg = page_lookup(fault_addr);
 	  if(pg)
 	  {
-//printf("page found\n");
+		  /* if page is found, try to load the page */
 		if(!page_load(pg))
 			PANIC("page cannot be loaded\n");
-//printf("page loaded\n");
-
 		return;
 	  } else
 	  {
+		  /* if page is not found */
 		void* esp;
 	  	if (user)
 		  	esp = f->esp;
 	  	else esp = thread_current()->esp;
-//printf("kernel esp = %p, user esp = %p\n", f->esp, thread_current()->esp);
-	  	/*check if it was a stack access */
-//printf("no such page: esp = %p, fauld_addr = %p\n", esp, fault_addr);
+	  	/* check if it is an access to the stack */
 	  	if (fault_addr < PHYS_BASE && fault_addr >= esp - 32)
 	  	{
-//printf("stack access\n");
+	  		/* if yes, then try to push one more page on the stack */
 		  	if(!page_push_stack(fault_addr))
 			  goto fail;
 		  	return;
@@ -190,11 +178,12 @@ page_fault (struct intr_frame *f)
 	  }
   }
 
-
-  /* To implement virtual memory, delete the rest of the function
-     body, and replace it with code that brings in the page to
-     which fault_addr refers. */
   fail: /* jump here in the case of fail */
+  /*
+   * if the page fault by the kernel,
+   * store eax to eip, and set eax to 0xffffffff,
+   * as it is told in the manual.
+   */
   if(!user)
   {
 	f->eip = f->eax;

@@ -366,7 +366,7 @@ process_exit (void)
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
-  page_table_destroy(thread_current()->pg_table);
+  page_table_destroy(thread_current()->pg_table);	// need to destroy supplementary page table, before page table
   pd = cur->pagedir;
   if (pd != NULL) 
     {
@@ -655,7 +655,6 @@ static bool
 load_segment (struct file *file, off_t ofs, uint8_t *upage,
               uint32_t read_bytes, uint32_t zero_bytes, bool writable) 
 {
-//printf("load_segment called, writable = %u\n", writable);
   ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
   ASSERT (pg_ofs (upage) == 0);
   ASSERT (ofs % PGSIZE == 0);
@@ -666,30 +665,29 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       /* Calculate how to fill this page.
          We will read PAGE_READ_BYTES bytes from FILE
          and zero the final PAGE_ZERO_BYTES bytes. */
-//printf("loading segment\n");
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
       /* Get a page of memory. */
-      //uint8_t *kpage = palloc_get_page (PAL_USER);
-      struct page* pg = page_construct(upage, writable | PG_FILE);
+      struct page* pg = page_construct(upage, writable | PG_FILE);	// construct page
       if(!pg) return false;		/* malloc failed to allocate kernel space */
 
-      uint8_t* kpage = frame_alloc(pg, PAL_USER);
+      uint8_t* kpage = frame_alloc(pg, PAL_USER);	// allocate frame for a page
+      if (kpage == NULL)
+      {
+    	  page_destructor(pg->elem, NULL);
+    	  return false;
+      }
 
+      /* set up page structure to read from file */
       pg->file = file;
       pg->ofs = ofs;
       pg->read_bytes = page_read_bytes;
-      pg->zero_bytes = page_zero_bytes;
-
-      /*check for memory leaks in destructing pg */
-      if (kpage == NULL)
-        return false;
 
       /* Load this page. */
       if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
         {
-          frame_free (kpage);
+    	  page_destructor(pg->elem, NULL);
           return false; 
         }
       memset (kpage + page_read_bytes, 0, page_zero_bytes);
@@ -697,7 +695,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       /* Add the page to the process's address space. */
       if (!install_page (upage, kpage, writable)) 
         {
-    	  frame_free (kpage);
+    	  page_destructor(pg->elem, NULL);
           return false; 
         }
 
@@ -715,40 +713,37 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 static bool
 setup_stack (void **esp, struct args_tmp* args)
 {
-//printf("stack_setup called\n");
-  uint8_t *kpage;
-  bool success = false;
   /* obtain and install a new page */
-	  success = page_push_stack(PHYS_BASE-PGSIZE);
-      if (success)
-      {
-    	  /* if new page is installed successfully, put args on the stack */
-    	  char* esp_ = (char*)PHYS_BASE;
-    	  /* since we know total length, we can calculate where to put pointers to arguments */
-    	  char** esp_argv = (char**)(esp_ - (char*)(args->total_length));
-    	  int i;
-    	  for(i = args->argc - 1; i >= 0 ; --i)
-    	  {
-    		  int len = strlen(args->argv[i])+1;
-    		  esp_ -= len;
-    		  memcpy(esp_, args->argv[i], len);
-    		  --esp_argv;
-    		  *esp_argv = esp_;
-    	  }
-    	  /* put pointer to argv on the stack */
-    	  esp_ = (char*)esp_argv;
-    	  --esp_argv;
-    	  *esp_argv = esp_;
-    	  /* put argc */
-    	  esp_argv -= sizeof(int)/sizeof(char**);
-    	  memcpy(esp_argv, &(args->argc), sizeof(int));
-    	  /* return address */
-    	  --esp_argv;
-    	  /* final value of esp */
-    	  *esp = esp_argv;
-      }
-//printf("stack_setup finished\n");
-  return success;
+  if (page_push_stack(PHYS_BASE-PGSIZE))
+  {
+  	  /* if new page is installed successfully, put args on the stack */
+   	  char* esp_ = (char*)PHYS_BASE;
+   	  /* since we know total length, we can calculate where to put pointers to arguments */
+   	  char** esp_argv = (char**)(esp_ - (char*)(args->total_length));
+   	  int i;
+   	  for(i = args->argc - 1; i >= 0 ; --i)
+   	  {
+   		  int len = strlen(args->argv[i])+1;
+   		  esp_ -= len;
+   		  memcpy(esp_, args->argv[i], len);
+   		  --esp_argv;
+   		  *esp_argv = esp_;
+   	  }
+   	  /* put pointer to argv on the stack */
+   	  esp_ = (char*)esp_argv;
+   	  --esp_argv;
+   	  *esp_argv = esp_;
+   	  /* put argc */
+   	  esp_argv -= sizeof(int)/sizeof(char**);
+   	  memcpy(esp_argv, &(args->argc), sizeof(int));
+   	  /* return address */
+   	  --esp_argv;
+   	  /* final value of esp */
+   	  *esp = esp_argv;
+
+   	  return true;
+  }
+  return false;
 }
 
 /* Adds a mapping from user virtual address UPAGE to kernel
