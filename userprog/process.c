@@ -675,7 +675,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       uint8_t* kpage = frame_alloc(pg, PAL_USER);	// allocate frame for a page
       if (kpage == NULL)
       {
-    	  page_destructor(pg->elem, NULL);
+    	  page_destructor(&pg->elem, NULL);
     	  return false;
       }
 
@@ -687,7 +687,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       /* Load this page. */
       if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
         {
-    	  page_destructor(pg->elem, NULL);
+    	  page_destructor(&pg->elem, NULL);
           return false; 
         }
       memset (kpage + page_read_bytes, 0, page_zero_bytes);
@@ -695,7 +695,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       /* Add the page to the process's address space. */
       if (!install_page (upage, kpage, writable)) 
         {
-    	  page_destructor(pg->elem, NULL);
+    	  page_destructor(&pg->elem, NULL);
           return false; 
         }
 
