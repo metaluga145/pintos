@@ -31,6 +31,7 @@ static void sys_close(int);
 
 /* auxiliary functions */
 static struct file_descriptor* find_fd(struct list*, int);
+static bool put_user (uint8_t *udst, uint8_t byte);
 static int get_user(const uint8_t*);
 static int get_int_32(const void*);
 void exit(int code)
@@ -216,7 +217,7 @@ static int sys_filesize(int fd)
 static int sys_read(unsigned fd, char* buffer, size_t size)
 {
 	/* check validity of a pointer */
-	if (buffer+size-1 >= PHYS_BASE || get_user(buffer) == -1) exit(-1);
+	if (buffer+size-1 >= PHYS_BASE || get_user(buffer) == -1 || put_user(buffer, *buffer) == false) exit(-1);
 	switch(fd)
 	{
 		case 0:
@@ -350,6 +351,15 @@ static struct file_descriptor* find_fd(struct list* fds, int fd)
 
 	return ret;
 }
+
+static bool put_user (uint8_t *udst, uint8_t byte)
+{
+      int error_code;
+          asm ("movl $1f, %0; movb %b2, %1; 1:"
+                       : "=&a" (error_code), "=m" (*udst) : "q" (byte));
+      return error_code != -1;
+}
+
 /* get user to check validity of the pointer */
 static int get_user(const uint8_t* uaddr)
 {
