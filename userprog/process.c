@@ -672,32 +672,10 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       struct page* pg = page_construct(upage, writable | PG_FILE);	// construct page
       if(!pg) return false;		/* malloc failed to allocate kernel space */
 
-      uint8_t* kpage = frame_alloc(pg, PAL_USER);	// allocate frame for a page
-      if (kpage == NULL)
-      {
-    	  page_destructor(&pg->elem, NULL);
-    	  return false;
-      }
-
       /* set up page structure to read from file */
       pg->file = file;
       pg->ofs = ofs;
       pg->read_bytes = page_read_bytes;
-
-      /* Load this page. */
-      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
-        {
-    	  page_destructor(&pg->elem, NULL);
-          return false; 
-        }
-      memset (kpage + page_read_bytes, 0, page_zero_bytes);
-
-      /* Add the page to the process's address space. */
-      if (!install_page (upage, kpage, writable)) 
-        {
-    	  page_destructor(&pg->elem, NULL);
-          return false; 
-        }
 
       /* Advance. */
       read_bytes -= page_read_bytes;
