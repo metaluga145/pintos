@@ -1,18 +1,22 @@
 #include "userprog/syscall.h"
 #include <stdio.h>
 #include <syscall-nr.h>
+#include <string.h>
+#include <bitmap.h>
+#include <lib/kernel/console.h>
+
+#include "threads/vaddr.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
-#include <lib/kernel/console.h>
-#include <string.h>
 #include "threads/malloc.h"
 #include "threads/palloc.h"
 
 #include "devices/shutdown.h"
 #include "userprog/process.h"
+#include "userprog/pagedir.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
-#include "threads/vaddr.h"
+
 
 #include "vm/page.h"
 #include "vm/frame.h"
@@ -37,6 +41,8 @@ static void sys_munmap(int);
 
 /* auxiliary functions */
 static struct file_descriptor* find_fd(struct list*, int);
+static void munmap(struct mmap_pid*);
+static void munmap_all();
 static bool put_user (uint8_t *udst, uint8_t byte);
 static int get_user(const uint8_t*);
 static int get_int_32(const void*);
@@ -99,7 +105,7 @@ syscall_handler (struct intr_frame *f)
 			break;
 		case SYS_MMAP:		f->eax = sys_mmap(get_int_32(f->esp+4), (void*)get_int_32(f->esp+8));
 			break;
-		case SYS_MUNMAP		sys_munmap(get_int_32(f->esp+8));
+		case SYS_MUNMAP:	sys_munmap(get_int_32(f->esp+4));
 			break;
 		default:
 		{
@@ -134,6 +140,7 @@ static void sys_exit(int code)
 		file_close(fd->file);
 		free(fd);
 	}
+	munmap_all();
 	// ----------------------------------------------
 	thread_exit ();
 	NOT_REACHED ();
@@ -345,6 +352,7 @@ static int sys_mmap(int fd, void* addr)
 	if (++next_mmpid < 0) next_mmpid = 0;
 
 	if(addr != pg_round_down(addr)) return -1;
+	if((unsigned)addr < (unsigned)0x0804800) return -1;
 
 	struct file_descriptor* struct_fd = find_fd(&(thread_current()->proc->fds), fd);
 	if(!struct_fd) return -1;
@@ -354,11 +362,12 @@ static int sys_mmap(int fd, void* addr)
 	lock_release(&file_sys_lock);
 	if(len <= 0) return -1;
 
-	struct mmap_pid* new_mmap = malloc(struct mmap_pid);
+	struct mmap_pid* new_mmap = malloc(sizeof(struct mmap_pid));
 	if (!new_mmap) return -1;
 
 	new_mmap->file = file_reopen(struct_fd->file);
 	new_mmap->pg_num = ((unsigned)len / PGSIZE) + 1;
+	new_mmap->addr = addr;
 
 	size_t i = 0;
 	for(; i < new_mmap->pg_num; ++i)
@@ -388,7 +397,6 @@ static int sys_mmap(int fd, void* addr)
 	new_mmap->mmappid = next_mmpid;
 
 	list_push_back(&thread_current()->proc->mfs, &new_mmap->elem);
-
 	return new_mmap->mmappid;
 }
 
@@ -400,7 +408,7 @@ static void sys_munmap(int mapping)
 	for(e = list_begin(&thread_current()->proc->mfs); e != list_end(&thread_current()->proc->mfs); e = list_next(e))
 	{
 		struct mmap_pid* tmp = list_entry(e, struct mmap_pid, elem);
-		if (mp->mmappid == mapping)
+		if (tmp->mmappid == mapping)
 		{
 			m = tmp;
 			break;
@@ -408,27 +416,7 @@ static void sys_munmap(int mapping)
 	}
 
 	if (!m) return;
-
-	size_t i = 0;
-	for(; i < m->pg_num; ++i)
-	{
-		struct page* pg = page_lookup(m->addr + i*PGSIZE);
-		if(!pg) PANIC("sys_munmap: page not found!");
-
-		if (pg->swap_idx != BITMAP_ERROR)
-			page_load(page);
-
-		if (pagedir_is_dirty(thread_current()->pagedir, pg->vaddr))
-			file_write_at(m->file, pg->vaddr, pg->read_bytes, pg->ofs);
-
-		hash_delete(thread_current()->pg_table, pg->elem);
-		frame_free(pg->paddr);
-		palloc(pg->paddr);
-		free(pg);
-	}
-
-	list_remove(&m->elem);
-	free(m);
+	munmap(m);
 	return;
 }
 /*
@@ -452,6 +440,44 @@ static struct file_descriptor* find_fd(struct list* fds, int fd)
 	}
 
 	return ret;
+}
+
+static void munmap(struct mmap_pid* m)
+{
+	size_t i = 0;
+	for(; i < m->pg_num; ++i)
+	{
+		struct page* pg = page_lookup(m->addr + i*PGSIZE);
+		if(!pg) PANIC("sys_munmap: page not found!");
+
+		if (pg->swap_idx != BITMAP_ERROR)
+			page_load(pg);
+
+		if (pagedir_is_dirty(thread_current()->pagedir, pg->vaddr))
+			file_write_at(m->file, pg->vaddr, pg->read_bytes, pg->ofs);
+
+		pagedir_clear_page(thread_current()->pagedir, pg->vaddr);
+		hash_delete(thread_current()->pg_table, &pg->elem);
+		frame_free(pg->paddr);
+		palloc_free_page(pg->paddr);
+		free(pg);
+	}
+	file_close(m->file);
+	list_remove(&m->elem);
+	free(m);
+	return;
+}
+
+static void munmap_all()
+{
+	struct list_elem* e = list_begin(&thread_current()->proc->mfs);
+	while(e != list_end(&thread_current()->proc->mfs))
+	{
+		struct mmap_pid* tmp = list_entry(e, struct mmap_pid, elem);
+		e = list_next(e);
+		munmap(tmp);
+	}
+	return;
 }
 
 static bool put_user (uint8_t *udst, uint8_t byte)
