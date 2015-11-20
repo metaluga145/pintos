@@ -29,6 +29,15 @@ struct file_descriptor
 	struct list_elem elem;	// element of the list fds in struct process.
 };
 
+struct mmap_pid
+{
+	int mmappid;
+	void* addr;
+	size_t pg_num;
+	struct file* file;
+	struct list_elem elem;
+};
+
 /*
  * process structure stores all necessary information about process.
  * It is used to track a process state, exit status, children of a process,
@@ -53,6 +62,7 @@ struct process
 	struct semaphore wait;		// sema is used to wait while child finishes its execution.
 
 	struct list fds;		// this list is not a critical section. No one, except owner, can use it
+	struct list mfs;
 };
 /* initalization */
 void process_init(void);

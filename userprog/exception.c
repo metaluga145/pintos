@@ -166,6 +166,7 @@ page_fault (struct intr_frame *f)
 		  /* if page is found, try to load the page */
 		if(!page_load(pg))
 			PANIC("page cannot be loaded\n");
+		pg->flags &= ~PG_PINNED;
 		return;
 	  } else
 	  {

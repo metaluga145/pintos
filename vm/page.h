@@ -28,7 +28,7 @@ struct page
 
 	struct file* file;	//if page is from file, then assigned as a pointer to a file
 	uint32_t read_bytes;// number of bytes to read from file
-	uint32_t zero_bytes;
+	//uint32_t zero_bytes;
 	off_t ofs;			// offset in the file
 
 	struct hash_elem elem;	// element of the page table;

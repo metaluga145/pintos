@@ -120,6 +120,7 @@ process_execute (const char *cmdline)
 	}	
   list_init(&child->children);
   list_init(&child->fds);
+  list_init(&child->mfs);
   child->my_lock = malloc(sizeof(struct parent_list_guard));
 	if(child->my_lock == NULL)
 	{

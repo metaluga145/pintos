@@ -132,7 +132,6 @@ bool page_load(struct page* pg)
 	}
 	else NOT_REACHED();
 
-	pg->flags &= ~PG_PINNED;	// unpin page after it's read
 
 	if(!install_page(pg->vaddr, pg->paddr, pg->flags & PG_WRITABLE))
 	goto fail;
