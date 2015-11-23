@@ -140,6 +140,7 @@ static void sys_exit(int code)
 		file_close(fd->file);
 		free(fd);
 	}
+	/* unmap all mappings before exit */
 	munmap_all();
 	// ----------------------------------------------
 	thread_exit ();
@@ -348,27 +349,34 @@ static void sys_close(int fd)
 
 static int sys_mmap(int fd, void* addr)
 {
+	/* init unique mmpid */
 	static int next_mmpid = 0;
 	if (++next_mmpid < 0) next_mmpid = 0;
 
+	/* check correctness of addr */
 	if(addr != pg_round_down(addr)) return -1;
 	if((unsigned)addr < (unsigned)0x0804800) return -1;
 
+	/* find previously opened file */
 	struct file_descriptor* struct_fd = find_fd(&(thread_current()->proc->fds), fd);
 	if(!struct_fd) return -1;
 
+	/* check the length of the file. must be greater than 0 */
 	lock_acquire(&file_sys_lock);
 	int len = file_length(struct_fd->file);
 	lock_release(&file_sys_lock);
 	if(len <= 0) return -1;
 
+	/* allocate structure and set fields */
 	struct mmap_pid* new_mmap = malloc(sizeof(struct mmap_pid));
 	if (!new_mmap) return -1;
 
 	new_mmap->file = file_reopen(struct_fd->file);
 	new_mmap->pg_num = ((unsigned)len / PGSIZE) + 1;
 	new_mmap->addr = addr;
+	new_mmap->mmappid = next_mmpid;
 
+	/* check if there is no overlapping */
 	size_t i = 0;
 	for(; i < new_mmap->pg_num; ++i)
 	{
@@ -379,6 +387,7 @@ static int sys_mmap(int fd, void* addr)
 		}
 	}
 
+	/* create pages for mapping. do not load them */
 	size_t ofs = 0;
 	for(i = 0; i < new_mmap->pg_num; ++i)
 	{
@@ -394,8 +403,7 @@ static int sys_mmap(int fd, void* addr)
 		ofs += page_read_bytes;
 	}
 
-	new_mmap->mmappid = next_mmpid;
-
+	/* add new mapping to the list of mappings and return */
 	list_push_back(&thread_current()->proc->mfs, &new_mmap->elem);
 	return new_mmap->mmappid;
 }
@@ -403,21 +411,18 @@ static int sys_mmap(int fd, void* addr)
 
 static void sys_munmap(int mapping)
 {
-	struct mmap_pid* m = NULL;
+	/* traverse list of mappings */
 	struct list_elem* e;
 	for(e = list_begin(&thread_current()->proc->mfs); e != list_end(&thread_current()->proc->mfs); e = list_next(e))
 	{
+		/* if mapping is found, unmap it */
 		struct mmap_pid* tmp = list_entry(e, struct mmap_pid, elem);
 		if (tmp->mmappid == mapping)
 		{
-			m = tmp;
-			break;
+			munmap(tmp);
+			return;
 		}
 	}
-
-	if (!m) return;
-	munmap(m);
-	return;
 }
 /*
  * auxiliary function, find file associated with a given file descriptor.
@@ -442,32 +447,44 @@ static struct file_descriptor* find_fd(struct list* fds, int fd)
 	return ret;
 }
 
+/*
+ * auxiliary function, which unmaps a given mapping
+ */
 static void munmap(struct mmap_pid* m)
 {
+	/* traverse all pages in the mapping */
 	size_t i = 0;
 	for(; i < m->pg_num; ++i)
 	{
+		/* find the page */
 		struct page* pg = page_lookup(m->addr + i*PGSIZE);
 		if(!pg) PANIC("sys_munmap: page not found!");
 
+		/* if page is swapped, bring it back */
 		if (pg->swap_idx != BITMAP_ERROR)
 			page_load(pg);
 
+		/* if the page was modified, write it to the file */
 		if (pagedir_is_dirty(thread_current()->pagedir, pg->vaddr))
 			file_write_at(m->file, pg->vaddr, pg->read_bytes, pg->ofs);
 
+		/* free memory */
 		pagedir_clear_page(thread_current()->pagedir, pg->vaddr);
 		hash_delete(thread_current()->pg_table, &pg->elem);
 		frame_free(pg->paddr);
 		palloc_free_page(pg->paddr);
 		free(pg);
 	}
+	/* close file and remove mapping from the list */
 	file_close(m->file);
 	list_remove(&m->elem);
 	free(m);
 	return;
 }
 
+/*
+ * auxiliary function, which unmaps all mappings of the current process. used in sys_exit
+ */
 static void munmap_all()
 {
 	struct list_elem* e = list_begin(&thread_current()->proc->mfs);

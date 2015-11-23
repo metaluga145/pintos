@@ -29,14 +29,18 @@ struct file_descriptor
 	struct list_elem elem;	// element of the list fds in struct process.
 };
 
+/*
+ * structure to track mmappings
+ */
 struct mmap_pid
 {
-	int mmappid;
-	void* addr;
-	size_t pg_num;
-	struct file* file;
-	struct list_elem elem;
+	int mmappid;			// mapping pid
+	void* addr;				// addr of the first mapped page
+	size_t pg_num;			// number of pages used in that mapping
+	struct file* file;		// file associated with the mapping (reopened)
+	struct list_elem elem;	// list element of the mappings of a particular process
 };
+
 
 /*
  * process structure stores all necessary information about process.
@@ -62,7 +66,8 @@ struct process
 	struct semaphore wait;		// sema is used to wait while child finishes its execution.
 
 	struct list fds;		// this list is not a critical section. No one, except owner, can use it
-	struct list mfs;
+	struct list mfs;		// list of mmaps. this list is not a critical section. No one, except owner, can use it
+
 };
 /* initalization */
 void process_init(void);
