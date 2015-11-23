@@ -43,6 +43,8 @@ static void sys_munmap(int);
 static struct file_descriptor* find_fd(struct list*, int);
 static void munmap(struct mmap_pid*);
 static void munmap_all();
+static void check_user_buf(char*, size_t, bool);
+static void unpin_pages(char*, size_t);
 static bool put_user (uint8_t *udst, uint8_t byte);
 static int get_user(const uint8_t*);
 static int get_int_32(const void*);
@@ -235,7 +237,7 @@ static int sys_filesize(int fd)
 static int sys_read(unsigned fd, char* buffer, size_t size)
 {
 	/* check validity of a pointer */
-	if (buffer+size-1 >= PHYS_BASE || get_user(buffer) == -1 || put_user(buffer, *buffer) == false) exit(-1);
+	check_user_buf(buffer, size, true);
 	switch(fd)
 	{
 		case 0:
@@ -261,6 +263,7 @@ static int sys_read(unsigned fd, char* buffer, size_t size)
 			return ret;
 		}
 	}
+	unpin_pages(buffer, size);
 	return -1;
 
 }
@@ -268,7 +271,7 @@ static int sys_read(unsigned fd, char* buffer, size_t size)
 static int sys_write(unsigned int fd, const char *buffer, size_t size)
 {
 	/* check validity of a pointer */
-	if(buffer+size-1 >= PHYS_BASE || get_user(buffer) == -1) exit(-1);
+	heck_user_buf(buffer, size, false);
 	switch(fd)
 	{
 		case 0: return -1; // cannot write to console output
@@ -299,6 +302,7 @@ static int sys_write(unsigned int fd, const char *buffer, size_t size)
 			return ret;
 		}
 	}
+	unpin_pages(buffer, size);
 	return -1;
 }
 
@@ -495,6 +499,37 @@ static void munmap_all()
 		munmap(tmp);
 	}
 	return;
+}
+
+static void check_user_buf(char* buf, size_t size, bool write)
+{
+	if(buffer+size-1 >= PHYS_BASE) exit(-1);
+
+	int pg_num = (((unsigned)(pg_round_down(buf)) - (unsigned(pg_round_down(buf + size))))/PGSIZE) + 1;
+	int i = 0;
+	for(;i < pg_num; ++i)
+	{
+		struct page* pg = page_lookup(buf + i*PGSIZE);
+		if(pg)
+			pg->flags |= PG_PINNED;
+		if(write)
+		{
+			if(get_user(buf) == -1 || put_user(buf + i*PGISZE, *(buf + i*PGSIZE)) == false)) exit(-1);
+		}
+		else
+			if(get_user(buf + i*PGSIZE) == -1) exit(-1);
+	}
+}
+
+static void unpin_pages(char* buf, size_t size)
+{
+	int pg_num = (((unsigned)(pg_round_down(buf)) - (unsigned(pg_round_down(buf + size))))/PGSIZE) + 1;
+	int i = 0;
+	for(;i < pg_num; ++i)
+	{
+		struct page* pg = page_lookup(buf + i*PGSIZE);
+		pg->flags &= ~PG_PINNED;
+	}
 }
 
 static bool put_user (uint8_t *udst, uint8_t byte)

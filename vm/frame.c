@@ -124,6 +124,9 @@ static struct frame* frame_evict(void)
 		list_push_back(&frame_list, &candidate_frame->list_elem);
 	}
 
+	// remove page from pagedir, so that the next time access will raise exception
+	pagedir_clear_page(candidate_page->thread->pagedir, candidate_page->vaddr);
+
 	// if the page is dirty or it should be swapped, then swap it
 	if (pagedir_is_dirty(candidate_page->thread->pagedir, candidate_page->vaddr) || (candidate_page->flags & PG_SWAPPED))
 	{
@@ -133,7 +136,5 @@ static struct frame* frame_evict(void)
 	/* mark as not in the memory */
 	candidate_page->paddr = NULL;
 
-	// remove page from pagedir, so that the next time access will raise exception
-	pagedir_clear_page(candidate_page->thread->pagedir, candidate_page->vaddr);
 	return evicted_frame;
 }
