@@ -461,7 +461,7 @@ static void munmap(struct mmap_pid* m)
 		if(!pg) PANIC("sys_munmap: page not found!");
 
 		/* if page is swapped, bring it back */
-		if (pg->swap_idx != BITMAP_ERROR)
+		if (swap_check_page(pg))
 			page_load(pg);
 
 		/* if the page was modified, write it to the file */

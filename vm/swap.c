@@ -34,7 +34,6 @@ void swap_out(struct page* pg)
 	/* find a free swap place on the block */
 	lock_acquire(&swap_table_lock);
 	size_t idx = bitmap_scan_and_flip(swap_table, 0, 1, false);
-	lock_release(&swap_table_lock);
 
 	if (idx == BITMAP_ERROR) PANIC("OUT OF SWAPS! REQUEST CANNOT BE SATISFIED");
 
@@ -45,6 +44,7 @@ void swap_out(struct page* pg)
 
 	pg->flags |= PG_SWAPPED;	// page must be swapped next time when it's evicted
 	pg->swap_idx = idx;			// save swap index
+	lock_release(&swap_table_lock);
 }
 
 /* loads a page pg from the swap. page must be pinned */
@@ -75,4 +75,13 @@ void swap_free(struct page* pg)
 	lock_acquire(&swap_table_lock);
 	bitmap_set(swap_table, pg->swap_idx, false);
 	lock_release(&swap_table_lock);
+}
+
+bool swap_check_page(struct page* pg)
+{
+	bool ret = false;
+	lock_acquire(&swap_table_lock);
+	ret = pg->swap_idx != BITMAP_ERROR;
+	lock_release(&swap_table_lock);
+	return ret;
 }

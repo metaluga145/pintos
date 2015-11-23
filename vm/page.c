@@ -123,7 +123,7 @@ bool page_load(struct page* pg)
 
 	pg->paddr = frame_alloc(pg, PAL_USER);
 
-	if(pg->swap_idx != BITMAP_ERROR) swap_in(pg);
+	if(swap_check_page(pg)) swap_in(pg);
 	else if(pg->flags & PG_FILE)
 	{
 		if(file_read_at(pg->file, pg->paddr, pg->read_bytes, pg->ofs) != (int)pg->read_bytes)
