@@ -131,7 +131,7 @@ static struct frame* frame_evict(void)
 	}
 
 	/* mark as not in the memory */
-	pg->paddr = NULL;
+	candidate_page->paddr = NULL;
 
 	// remove page from pagedir, so that the next time access will raise exception
 	pagedir_clear_page(candidate_page->thread->pagedir, candidate_page->vaddr);
