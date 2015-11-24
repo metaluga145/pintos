@@ -237,7 +237,6 @@ static int sys_filesize(int fd)
 
 static int sys_read(unsigned fd, char* buffer, size_t size)
 {
-//printf("%p: sys_read. %u\n", thread_current(), size/PGSIZE);
 	/* check validity of a pointer */
 	check_user_buf(buffer, size, true);
 	int ret = -1;
@@ -273,7 +272,6 @@ static int sys_read(unsigned fd, char* buffer, size_t size)
 static int sys_write(unsigned int fd, const char *buffer, size_t size)
 {
 	/* check validity of a pointer */
-//printf("%p: sys_write. %u\n", thread_current(), size/PGSIZE);
 	check_user_buf(buffer, size, false);
 	int ret = -1;
 	switch(fd)
@@ -462,7 +460,6 @@ static struct file_descriptor* find_fd(struct list* fds, int fd)
  */
 static void munmap(struct mmap_pid* m)
 {
-//printf("munmpa called\n");
 	/* traverse all pages in the mapping */
 	size_t i = 0;
 	for(; i < m->pg_num; ++i)
@@ -472,20 +469,14 @@ static void munmap(struct mmap_pid* m)
 		if(!pg) PANIC("sys_munmap: page not found!");
 
 		/* if page is swapped, bring it back */
-		int ret = swap_check_page(pg);
-//printf("ret %i\n", ret);
-		if (ret)
-{
-//printf("swap_idx != err : %i\n", false);
+		if (swap_check_page(pg))
 			page_load(pg);
-}
 
 		/* if the page was modified, write it to the file */
 		if (pagedir_is_dirty(thread_current()->pagedir, pg->vaddr))
 			file_write_at(m->file, pg->vaddr, pg->read_bytes, pg->ofs);
 
 		/* free memory */
-//printf("%p: munmap free page %p at %p\n", thread_current(), pg->vaddr, pg->paddr);
 		pagedir_clear_page(thread_current()->pagedir, pg->vaddr);
 		hash_delete(thread_current()->pg_table, &pg->elem);
 		frame_free(pg->paddr);
@@ -514,15 +505,31 @@ static void munmap_all()
 	return;
 }
 
+/*
+ * auxiliary function to check user buffer and pin pages
+ */
 static void check_user_buf(char* buffer, size_t size, bool write)
 {
+	/* check if the buffer is below kernel memory */
 	if(buffer+size-1 >= PHYS_BASE) exit(-1);	
+	/* go through all pages covered by buffer */
 	char* buf = buffer;
 	while((unsigned)buf < (unsigned)buffer + size)
 	{
+		/*
+		 * look up for a page.
+		 * if it exists then pin it.
+		 * if there is no such page it may be right violation
+		 * or stack access. it will be decided during page fault
+		 */
 		struct page* pg = page_lookup(buf);
 		if(pg)
 			pg->flags |= PG_PINNED;
+
+		/*
+		 * check if we can access buffer.
+		 * if page fault occurred than page is brought to memory and pinned
+		 */
 		if(write)
 		{
 			if(get_user(buf) == -1 || put_user(buf, *(buf)) == false) exit(-1);
@@ -533,6 +540,7 @@ static void check_user_buf(char* buffer, size_t size, bool write)
 		buf = (char*)((unsigned)buf + (unsigned)PGSIZE);
 	}
 
+	/* the same, but for the last page */
 	buf = (char*)((unsigned)buffer + size);
 	struct page* pg = page_lookup(buf);
 	if(pg)
@@ -545,6 +553,10 @@ static void check_user_buf(char* buffer, size_t size, bool write)
 		if(get_user(buf) == -1) exit(-1);
 }
 
+/*
+ * auxiliary function to unpin all pages used by buffer,
+ * since they are no longer in need
+ */
 static void unpin_pages(char* buffer, size_t size)
 {
 	char* buf = buffer;

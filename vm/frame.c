@@ -97,14 +97,12 @@ void frame_free(void* paddr)
 	frames_all[frame_idx].page = NULL;
 	list_remove(&frames_all[frame_idx].list_elem);
 	//no need to call palloc_free. Frame will be deallocated in pagedir_destroy.
-//printf("frame freed at %p\n", paddr);
 	lock_release(&frame_list_lock);
 }
 
 /* evicts a frame using second-chance algorithm */
 static struct frame* frame_evict(void)
 {
-//printf("%p: frame eviction, size = %u\n", thread_current(), list_size(&frame_list));
 	struct frame* evicted_frame = NULL;
 	struct list_elem* e = list_begin(&frame_list);
 	struct page* candidate_page;
@@ -122,15 +120,9 @@ static struct frame* frame_evict(void)
 			else
 				evicted_frame = candidate_frame;
 		}
-//printf("size before = %u, %i\n", list_size(&frame_list), e == &candidate_frame->list_elem);
+
 		e = list_remove(e);
-if (e == list_end(&frame_list) || e == list_rend(&frame_list))
-{
-//printf("list size = %u\n", list_size(&frame_list));
- PANIC("wut???????????????????????\n");
-}
 		list_push_back(&frame_list, &candidate_frame->list_elem);
-//printf("size after = %u\n", list_size(&frame_list));
 	}
 
 	// remove page from pagedir, so that the next time access will raise exception
@@ -142,8 +134,5 @@ if (e == list_end(&frame_list) || e == list_rend(&frame_list))
 		swap_out(candidate_page);
 	}
 	
-	/* mark as not in the memory */
-	//candidate_page->paddr = NULL;
-
 	return evicted_frame;
 }

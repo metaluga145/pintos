@@ -117,7 +117,6 @@ struct page* page_lookup(void* vaddr)
  */
 bool page_load(struct page* pg)
 {
-//printf("%p: loading page %p\n", thread_current(), pg->vaddr);
 	ASSERT(pg != NULL);
 
 	pg->flags |= PG_PINNED; // pin page for reading
@@ -127,7 +126,6 @@ bool page_load(struct page* pg)
 	if(swap_check_page(pg)) swap_in(pg);
 	else if(pg->flags & PG_FILE)
 	{
-//printf("%p: page from file %p\n", thread_current(), pg->vaddr);
 
 		if(file_read_at(pg->file, pg->paddr, pg->read_bytes, pg->ofs) != (int)pg->read_bytes)
 			goto fail;
@@ -142,7 +140,7 @@ bool page_load(struct page* pg)
 	return true; // page is loaded successfully
 
 	fail:
-PANIC("page cannot be installed\n");
+	PANIC("page cannot be installed\n");
 	frame_free(pg->paddr);
 	return false;
 }
