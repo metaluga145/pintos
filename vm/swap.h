@@ -9,5 +9,4 @@ void swap_out(struct page*);
 void swap_in(struct page*);
 void swap_free(struct page*);
 
-int swap_check_page(struct page*);
 #endif

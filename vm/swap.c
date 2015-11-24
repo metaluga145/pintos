@@ -77,17 +77,3 @@ void swap_free(struct page* pg)
 	bitmap_set(swap_table, pg->swap_idx, false);
 	lock_release(&swap_table_lock);
 }
-
-/* check if page is swapped or not */
-int swap_check_page(struct page* pg)
-{
-	/*
-	 * page may be was evicted just recently or before,
-	 * we need to make sure that the swapping is finished before we check it
-	 */
-	int ret = 0;
-	lock_acquire(&swap_table_lock);
-	ret = (pg->swap_idx != BITMAP_ERROR);
-	lock_release(&swap_table_lock);
-	return ret;
-}

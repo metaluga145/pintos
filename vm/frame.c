@@ -98,11 +98,13 @@ void frame_free(void* paddr)
 	lock_release(&frame_list_lock);
 }
 
+/* checks if the page is in the memory */
 int frame_page_check(struct page* pg)
 {
 	lock_acquire(&frame_list_lock);
 	int ret = (pg->paddr != NULL);
 	lock_release(&frame_list_lock);
+	return ret;
 }
 
 /* evicts a frame using second-chance algorithm */
@@ -135,7 +137,8 @@ static struct frame* frame_evict(void)
 
 	// if the page is dirty or it should be swapped, then swap it
 	if (pagedir_is_dirty(candidate_page->thread->pagedir, candidate_page->vaddr) || (candidate_page->flags & PG_SWAPPED))
-	{
+	{	
+		/* if it is memory mapped page, then it is dirty. write to the file */
 		if(candidate_page->flags & PG_MMAP)
 		{
 			file_write_at(candidate_page->file, candidate_page->vaddr, candidate_page->read_bytes, candidate_page->ofs);
@@ -143,6 +146,7 @@ static struct frame* frame_evict(void)
 		else swap_out(candidate_page);
 	}
 	
+	/* mark page as not in the memory */
 	candidate_page->paddr = NULL;
 
 	return evicted_frame;
