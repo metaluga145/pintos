@@ -81,8 +81,6 @@ void* frame_alloc(struct page* page, enum palloc_flags flags)
 
 	lock_release(&frame_list_lock);
 
-
-//printf("%p: frame allocated at %p for %p, list size = %u\n", thread_current(), paddr, page->vaddr, list_size(&frame_list));
 	return paddr;	// return physical address of allocated frame
 }
 
@@ -97,6 +95,13 @@ void frame_free(void* paddr)
 	frames_all[frame_idx].page = NULL;
 	list_remove(&frames_all[frame_idx].list_elem);
 	//no need to call palloc_free. Frame will be deallocated in pagedir_destroy.
+	lock_release(&frame_list_lock);
+}
+
+int frame_page_check(struct page* pg)
+{
+	lock_acquire(&frame_list_lock);
+	int ret = (pg->paddr != NULL);
 	lock_release(&frame_list_lock);
 }
 
@@ -138,5 +143,7 @@ static struct frame* frame_evict(void)
 		else swap_out(candidate_page);
 	}
 	
+	candidate_page->paddr = NULL;
+
 	return evicted_frame;
 }

@@ -468,12 +468,9 @@ static void munmap(struct mmap_pid* m)
 		struct page* pg = page_lookup(m->addr + i*PGSIZE);
 		if(!pg) PANIC("sys_munmap: page not found!");
 
-		/* if page is swapped, bring it back */
-		if (swap_check_page(pg))
-			page_load(pg);
-
-		/* if the page was modified, write it to the file */
-		if (pagedir_is_dirty(thread_current()->pagedir, pg->vaddr))
+		pg->flags |= PG_PINNED;
+		/* if page is in the memory and it is dirty, write it back */
+		if (frame_page_check(pg) && pagedir_is_dirty(thread_current()->pagedir, pg->vaddr))
 			file_write_at(m->file, pg->vaddr, pg->read_bytes, pg->ofs);
 
 		/* free memory */
