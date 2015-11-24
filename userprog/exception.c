@@ -150,7 +150,7 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 /*
-  printf ("Page fault at %p: %s error %s page in %s context.\n",
+  printf ("%p: Page fault at %p: %s error %s page in %s context.\n", thread_current(),
           fault_addr,
           not_present ? "not present" : "rights violation",
           write ? "writing" : "reading",
@@ -166,7 +166,7 @@ page_fault (struct intr_frame *f)
 		  /* if page is found, try to load the page */
 		if(!page_load(pg))
 			PANIC("page cannot be loaded\n");
-		if(user) pg->flags &= ~PG_PINNED;
+		if(!thread_current()->esp) pg->flags &= ~PG_PINNED;
 		return;
 	  } else
 	  {

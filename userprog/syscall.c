@@ -114,6 +114,7 @@ syscall_handler (struct intr_frame *f)
 			exit(-1);
 		}
 	}
+	thread_current()->esp = NULL;
 }
 
 
@@ -236,8 +237,10 @@ static int sys_filesize(int fd)
 
 static int sys_read(unsigned fd, char* buffer, size_t size)
 {
+//printf("%p: sys_read. %u\n", thread_current(), size/PGSIZE);
 	/* check validity of a pointer */
 	check_user_buf(buffer, size, true);
+	int ret = -1;
 	switch(fd)
 	{
 		case 0:
@@ -245,14 +248,14 @@ static int sys_read(unsigned fd, char* buffer, size_t size)
 			/* if read from console, read it by one char */
 			int i = 0;
 			for(; i < size; ++i) buffer[i] = input_getc();
-			return i;
+			ret = i;
 		}
-		case 1: return -1; // we cannot read from console input
+		break;
+		case 1: break; // we cannot read from console input
 		default:
 		{
 			/* if we need to read from the file, find the file */
 			struct file_descriptor* struct_fd = find_fd(&(thread_current()->proc->fds), fd);
-			int ret = -1;
 			if(struct_fd)
 			{
 				// if the file is found, read from it */
@@ -260,21 +263,22 @@ static int sys_read(unsigned fd, char* buffer, size_t size)
 				ret = file_read(struct_fd->file, buffer, size);
 				lock_release(&file_sys_lock);
 			}
-			return ret;
 		}
 	}
 	unpin_pages(buffer, size);
-	return -1;
+	return ret;
 
 }
 
 static int sys_write(unsigned int fd, const char *buffer, size_t size)
 {
 	/* check validity of a pointer */
-	heck_user_buf(buffer, size, false);
+//printf("%p: sys_write. %u\n", thread_current(), size/PGSIZE);
+	check_user_buf(buffer, size, false);
+	int ret = -1;
 	switch(fd)
 	{
-		case 0: return -1; // cannot write to console output
+		case 0: break; // cannot write to console output
 		case 1:
 		{
 			// if write to console, split in chunks and write to console
@@ -285,13 +289,14 @@ static int sys_write(unsigned int fd, const char *buffer, size_t size)
 				written += 128;
 			}
 			putbuf(buffer+written, size % 128);
-			return size;
+
+			ret = size;
 		}
+		break;
 		default:
 		{
 			// if write to file, find fd
 			struct file_descriptor* struct_fd = find_fd(&(thread_current()->proc->fds), fd);
-			int ret = -1;
 			if(struct_fd)
 			{
 				// if there is such fd, write to the file
@@ -299,11 +304,10 @@ static int sys_write(unsigned int fd, const char *buffer, size_t size)
 				ret = file_write(struct_fd->file, buffer, size);
 				lock_release(&file_sys_lock);
 			}
-			return ret;
 		}
 	}
 	unpin_pages(buffer, size);
-	return -1;
+	return ret;
 }
 
 static void sys_seek(int fd, unsigned position)
@@ -424,6 +428,8 @@ static void sys_munmap(int mapping)
 		if (tmp->mmappid == mapping)
 		{
 			munmap(tmp);
+			list_remove(&tmp->elem);
+			free(tmp);
 			return;
 		}
 	}
@@ -456,6 +462,7 @@ static struct file_descriptor* find_fd(struct list* fds, int fd)
  */
 static void munmap(struct mmap_pid* m)
 {
+//printf("munmpa called\n");
 	/* traverse all pages in the mapping */
 	size_t i = 0;
 	for(; i < m->pg_num; ++i)
@@ -465,14 +472,20 @@ static void munmap(struct mmap_pid* m)
 		if(!pg) PANIC("sys_munmap: page not found!");
 
 		/* if page is swapped, bring it back */
-		if (swap_check_page(pg))
+		int ret = swap_check_page(pg);
+//printf("ret %i\n", ret);
+		if (ret)
+{
+//printf("swap_idx != err : %i\n", false);
 			page_load(pg);
+}
 
 		/* if the page was modified, write it to the file */
 		if (pagedir_is_dirty(thread_current()->pagedir, pg->vaddr))
 			file_write_at(m->file, pg->vaddr, pg->read_bytes, pg->ofs);
 
 		/* free memory */
+//printf("%p: munmap free page %p at %p\n", thread_current(), pg->vaddr, pg->paddr);
 		pagedir_clear_page(thread_current()->pagedir, pg->vaddr);
 		hash_delete(thread_current()->pg_table, &pg->elem);
 		frame_free(pg->paddr);
@@ -481,8 +494,6 @@ static void munmap(struct mmap_pid* m)
 	}
 	/* close file and remove mapping from the list */
 	file_close(m->file);
-	list_remove(&m->elem);
-	free(m);
 	return;
 }
 
@@ -495,41 +506,59 @@ static void munmap_all()
 	while(e != list_end(&thread_current()->proc->mfs))
 	{
 		struct mmap_pid* tmp = list_entry(e, struct mmap_pid, elem);
-		e = list_next(e);
 		munmap(tmp);
+
+		e = list_remove(&tmp->elem);
+		free(tmp);
 	}
 	return;
 }
 
-static void check_user_buf(char* buf, size_t size, bool write)
+static void check_user_buf(char* buffer, size_t size, bool write)
 {
-	if(buffer+size-1 >= PHYS_BASE) exit(-1);
-
-	int pg_num = (((unsigned)(pg_round_down(buf)) - (unsigned(pg_round_down(buf + size))))/PGSIZE) + 1;
-	int i = 0;
-	for(;i < pg_num; ++i)
+	if(buffer+size-1 >= PHYS_BASE) exit(-1);	
+	char* buf = buffer;
+	while((unsigned)buf < (unsigned)buffer + size)
 	{
-		struct page* pg = page_lookup(buf + i*PGSIZE);
+		struct page* pg = page_lookup(buf);
 		if(pg)
 			pg->flags |= PG_PINNED;
 		if(write)
 		{
-			if(get_user(buf) == -1 || put_user(buf + i*PGISZE, *(buf + i*PGSIZE)) == false)) exit(-1);
+			if(get_user(buf) == -1 || put_user(buf, *(buf)) == false) exit(-1);
 		}
 		else
-			if(get_user(buf + i*PGSIZE) == -1) exit(-1);
+			if(get_user(buf) == -1) exit(-1);
+		
+		buf = (char*)((unsigned)buf + (unsigned)PGSIZE);
 	}
+
+	buf = (char*)((unsigned)buffer + size);
+	struct page* pg = page_lookup(buf);
+	if(pg)
+		pg->flags |= PG_PINNED;
+	if(write)
+	{
+		if(get_user(buf) == -1 || put_user(buf, *(buf)) == false) exit(-1);
+	}
+	else
+		if(get_user(buf) == -1) exit(-1);
 }
 
-static void unpin_pages(char* buf, size_t size)
+static void unpin_pages(char* buffer, size_t size)
 {
-	int pg_num = (((unsigned)(pg_round_down(buf)) - (unsigned(pg_round_down(buf + size))))/PGSIZE) + 1;
-	int i = 0;
-	for(;i < pg_num; ++i)
+	char* buf = buffer;
+	while((unsigned)buf < (unsigned)buffer + size)
 	{
-		struct page* pg = page_lookup(buf + i*PGSIZE);
-		pg->flags &= ~PG_PINNED;
+		struct page* pg = page_lookup(buf);
+		if(pg)
+			pg->flags &= ~PG_PINNED;
+		buf = buf + PGSIZE;
 	}
+	buf = (char*)((unsigned)buffer + size);
+	struct page* pg = page_lookup(buf);
+	if(pg)
+		pg->flags &= ~PG_PINNED;
 }
 
 static bool put_user (uint8_t *udst, uint8_t byte)

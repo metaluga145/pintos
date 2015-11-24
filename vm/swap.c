@@ -43,7 +43,9 @@ void swap_out(struct page* pg)
 		 block_write(swap_block, swap_base + i, (uint8_t*)pg->paddr + (i * BLOCK_SECTOR_SIZE));
 
 	pg->flags |= PG_SWAPPED;	// page must be swapped next time when it's evicted
-	pg->swap_idx = idx;			// save swap index
+	pg->swap_idx = idx;		// save swap index
+
+//printf("%p: page %p of proc %p from %p swapped out to %i\n", thread_current(), pg->vaddr, pg->thread, pg->paddr, pg->swap_idx);
 	lock_release(&swap_table_lock);
 }
 
@@ -77,11 +79,11 @@ void swap_free(struct page* pg)
 	lock_release(&swap_table_lock);
 }
 
-bool swap_check_page(struct page* pg)
+int swap_check_page(struct page* pg)
 {
-	bool ret = false;
+	int ret = 0;
 	lock_acquire(&swap_table_lock);
-	ret = pg->swap_idx != BITMAP_ERROR;
+	ret = (pg->swap_idx != BITMAP_ERROR);
 	lock_release(&swap_table_lock);
 	return ret;
 }
