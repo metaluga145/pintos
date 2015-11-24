@@ -126,7 +126,6 @@ bool page_load(struct page* pg)
 	if(swap_check_page(pg)) swap_in(pg);
 	else
 	{
-
 		if(file_read_at(pg->file, pg->paddr, pg->read_bytes, pg->ofs) != (int)pg->read_bytes)
 			goto fail;
 		memset((uint8_t*)pg->paddr + pg->read_bytes, 0, PGSIZE - pg->read_bytes);
