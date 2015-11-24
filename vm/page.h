@@ -20,6 +20,7 @@ struct page
 #define PG_FILE		0x2	// set if page is loaded from file (not set if page is on the stack)
 #define PG_PINNED	0x4	// set if page is pinned. For now used to load files (not for system calls).
 #define PG_SWAPPED	0x8	// set if page should be swapped during eviction
+#define PG_MMAP		0x10// set if page is mmapped
 
 	struct thread* thread;	// pointer to the thread-owner
 

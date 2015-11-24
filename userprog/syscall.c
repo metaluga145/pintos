@@ -397,7 +397,7 @@ static int sys_mmap(int fd, void* addr)
 	size_t ofs = 0;
 	for(i = 0; i < new_mmap->pg_num; ++i)
 	{
-		struct page* new_pg = page_construct(addr + i*PGSIZE, PG_FILE | PG_WRITABLE);
+		struct page* new_pg = page_construct(addr + i*PGSIZE, PG_MMAP | PG_WRITABLE);
 
 		size_t page_read_bytes = len < PGSIZE ? len : PGSIZE;
 

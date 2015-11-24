@@ -124,14 +124,13 @@ bool page_load(struct page* pg)
 	pg->paddr = frame_alloc(pg, PAL_USER);
 
 	if(swap_check_page(pg)) swap_in(pg);
-	else if(pg->flags & PG_FILE)
+	else
 	{
 
 		if(file_read_at(pg->file, pg->paddr, pg->read_bytes, pg->ofs) != (int)pg->read_bytes)
 			goto fail;
 		memset((uint8_t*)pg->paddr + pg->read_bytes, 0, PGSIZE - pg->read_bytes);
 	}
-	else NOT_REACHED();
 
 
 	if(!install_page(pg->vaddr, pg->paddr, pg->flags & PG_WRITABLE))
@@ -140,7 +139,7 @@ bool page_load(struct page* pg)
 	return true; // page is loaded successfully
 
 	fail:
-	PANIC("page cannot be installed\n");
+	PANIC("page cannot be read\n");
 	frame_free(pg->paddr);
 	return false;
 }

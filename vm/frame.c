@@ -131,7 +131,11 @@ static struct frame* frame_evict(void)
 	// if the page is dirty or it should be swapped, then swap it
 	if (pagedir_is_dirty(candidate_page->thread->pagedir, candidate_page->vaddr) || (candidate_page->flags & PG_SWAPPED))
 	{
-		swap_out(candidate_page);
+		if(candidate_page->flags & PG_MMAP)
+		{
+			file_write_at(candidate_page->file, candidate_page->vaddr, candidate_page->read_bytes, candidate_page->ofs);
+		}
+		else swap_out(candidate_page);
 	}
 	
 	return evicted_frame;
