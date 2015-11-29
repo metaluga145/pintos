@@ -40,7 +40,7 @@ void cache_init(void)
 	}
 }
 
-void cache_read(struct block* block, block_sector_t sector, void* data, off_t offset, int size)
+void cache_read(struct block* block, block_sector_t sector, void* data, unsigned offset, int size)
 {
 //printf("cache_read called block = %p, sector = %u\n", block, sector);
 	ASSERT(block != NULL);
@@ -52,7 +52,10 @@ void cache_read(struct block* block, block_sector_t sector, void* data, off_t of
 	if (idx < 0) PANIC("CACHE LOOKUP FAILED");
 
 	cache[idx].last_acc = timer_ticks();	// reduce probability of waiting during eviction
-	memcpy(data, &cache[idx].data + offset, size);
+
+	/* I hate those bugs with data type conversions */
+	uint8_t* addr = (uint8_t*)((unsigned)(&cache[idx].data) + offset);
+	memcpy(data, addr, size);
 
 	cache[idx].flags |= C_ACCD;
 
@@ -60,7 +63,7 @@ void cache_read(struct block* block, block_sector_t sector, void* data, off_t of
 }
 
 
-void cache_write(struct block* block, block_sector_t sector, void* data, off_t offset, int size)
+void cache_write(struct block* block, block_sector_t sector, void* data, unsigned offset, int size)
 {
 //printf("cache_write called block = %p, sector = %u\n", block, sector);
 
@@ -73,8 +76,10 @@ void cache_write(struct block* block, block_sector_t sector, void* data, off_t o
 	if (idx < 0) PANIC("CACHE LOOKUP FAILED");
 
 	cache[idx].last_acc = timer_ticks();	// reduce probability of waiting during eviction
-	memcpy(&cache[idx].data + offset, data, size);
 
+	/* I hate those bugs with data type conversions */
+	uint8_t* addr = (uint8_t*)((unsigned)(&cache[idx].data) + offset);
+	memcpy(addr, data, size);
 
 	cache[idx].flags |= C_ACCD | C_DIRTY;
 
