@@ -1,9 +1,12 @@
 #include "filesys/cache.h"
 #include "vm/page.h"		// flag_t
 #include "threads/synch.h"
+#include "threads/malloc.h"
 #include "devices/timer.h"
 
-#define CACHE_SIZE 64;
+#include "string.h"
+
+#define CACHE_SIZE 64
 
 struct cache_block
 {
@@ -11,8 +14,8 @@ struct cache_block
 	block_sector_t sector;
 
 	flag_t flags;
-#define C_ACCD	0x01;
-#define C_DIRTY	0x02;
+#define C_ACCD	0x01
+#define C_DIRTY	0x02
 
 	uint8_t data[BLOCK_SECTOR_SIZE];
 
@@ -21,7 +24,7 @@ struct cache_block
 	int64_t last_acc;
 };
 
-struct cache_block cache[CACHE_SIZE];
+static struct cache_block cache[CACHE_SIZE];
 
 static int cache_lookup(struct block*, block_sector_t, int);
 
@@ -39,6 +42,7 @@ void cache_init(void)
 
 void cache_read(struct block* block, block_sector_t sector, void* data)
 {
+//printf("cache_read called block = %p, sector = %u\n", block, sector);
 	ASSERT(block != NULL);
 	ASSERT(data != NULL);
 
@@ -49,7 +53,7 @@ void cache_read(struct block* block, block_sector_t sector, void* data)
 	cache[idx].last_acc = timer_ticks();	// reduce probability of waiting during eviction
 	memcpy(data, &cache[idx].data, BLOCK_SECTOR_SIZE);
 
-	cache[idx].flags = C_ACCD;
+	cache[idx].flags |= C_ACCD;
 
 	lock_release(&cache[idx].lock);
 }
@@ -57,6 +61,8 @@ void cache_read(struct block* block, block_sector_t sector, void* data)
 
 void cache_write(struct block* block, block_sector_t sector, void* data)
 {
+//printf("cache_write called block = %p, sector = %u\n", block, sector);
+
 	ASSERT(block != NULL);
 	ASSERT(data != NULL);
 
@@ -67,13 +73,15 @@ void cache_write(struct block* block, block_sector_t sector, void* data)
 	cache[idx].last_acc = timer_ticks();	// reduce probability of waiting during eviction
 	memcpy(&cache[idx].data, data, BLOCK_SECTOR_SIZE);
 
-	cache[idx].flags = C_ACCD | C_DIRTY;
+	cache[idx].flags |= C_ACCD | C_DIRTY;
+
 
 	lock_release(&cache[idx].lock);
 }
 
 static int cache_evict()
 {
+//printf("cache_evict called\n");
 	int ret = -1;
 	/* while not evicted. there is a possibility that all blocks are tried to be evicted */
 	while (ret < 0)
@@ -82,19 +90,22 @@ static int cache_evict()
 		/* try to evict at least something */
 		for(; i < CACHE_SIZE; ++i)
 		{
-			if(lock_try_acquire(cache[i].lock))
+			if(lock_try_acquire(&cache[i].lock))
 			{
 				ret = i;	/* evicted for now */
+				if(cache[i].block_dev == NULL)
+					goto done;
 				break;
 			}
 		}
+		++i;	// advance
 		/* all before were accessed. try to find older block */
 		for(; i < CACHE_SIZE; ++i)
 		{
 			/* if free block is found */
 			if (cache[i].block_dev == NULL)
 			{
-				if(try_lock_acquire(&cache[i].lock))
+				if(lock_try_acquire(&cache[i].lock))
 				{
 					/* check again, if it is free */
 					if(cache[i].block_dev == NULL)
@@ -111,7 +122,7 @@ static int cache_evict()
 			/* check when the block was accessed last time */
 			if(cache[i].last_acc < cache[ret].last_acc)
 			{
-				if(try_lock_acquire(&cache[i].lock))
+				if(lock_try_acquire(&cache[i].lock))
 				{
 					/* make sure it is really older */
 					if(cache[i].last_acc < cache[ret].last_acc)
@@ -126,15 +137,20 @@ static int cache_evict()
 	}
 
 done:
+//printf("evicted %i\n", ret);
 
 	if(cache[ret].flags & C_DIRTY)
+	{
+		//printf("%i is written\n", ret);
 		block_write(cache[ret].block_dev, cache[ret].sector, &cache[ret].data);
+	}
 
 	return ret;
 }
 
 static int cache_lookup(struct block* block, block_sector_t sector, int load)
 {
+//printf("cache_lookup called\n");
 	int i = 0;
 	for(; i < CACHE_SIZE; ++i)
 	{
@@ -153,6 +169,7 @@ static int cache_lookup(struct block* block, block_sector_t sector, int load)
 		i = cache_evict();
 		cache[i].block_dev = block;
 		cache[i].sector = sector;
+		cache[i].flags = 0;
 		if (load)
 		{
 			block_read(block, sector, &cache[i].data);
