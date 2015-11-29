@@ -40,18 +40,19 @@ void cache_init(void)
 	}
 }
 
-void cache_read(struct block* block, block_sector_t sector, void* data)
+void cache_read(struct block* block, block_sector_t sector, void* data, off_t offset, int size)
 {
 //printf("cache_read called block = %p, sector = %u\n", block, sector);
 	ASSERT(block != NULL);
 	ASSERT(data != NULL);
+	ASSERT(offset + size <= BLOCK_SECTOR_SIZE);
 
 	int idx = cache_lookup(block, sector, 1);
 
 	if (idx < 0) PANIC("CACHE LOOKUP FAILED");
 
 	cache[idx].last_acc = timer_ticks();	// reduce probability of waiting during eviction
-	memcpy(data, &cache[idx].data, BLOCK_SECTOR_SIZE);
+	memcpy(data, &cache[idx].data + offset, size);
 
 	cache[idx].flags |= C_ACCD;
 
@@ -59,19 +60,21 @@ void cache_read(struct block* block, block_sector_t sector, void* data)
 }
 
 
-void cache_write(struct block* block, block_sector_t sector, void* data)
+void cache_write(struct block* block, block_sector_t sector, void* data, off_t offset, int size)
 {
 //printf("cache_write called block = %p, sector = %u\n", block, sector);
 
 	ASSERT(block != NULL);
 	ASSERT(data != NULL);
+	ASSERT(offset + size <= BLOCK_SECTOR_SIZE);
 
 	int idx = cache_lookup(block, sector, 0);
 
 	if (idx < 0) PANIC("CACHE LOOKUP FAILED");
 
 	cache[idx].last_acc = timer_ticks();	// reduce probability of waiting during eviction
-	memcpy(&cache[idx].data, data, BLOCK_SECTOR_SIZE);
+	memcpy(&cache[idx].data + offset, data, size);
+
 
 	cache[idx].flags |= C_ACCD | C_DIRTY;
 
