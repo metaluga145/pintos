@@ -89,6 +89,18 @@ void cache_write(struct block* block, block_sector_t sector, void* data, unsigne
 	lock_release(&cache[idx].lock);
 }
 
+void cache_flush(void)
+{
+	int i = 0;
+	for(; i < CACHE_SIZE; ++i)
+	{
+		if (cache[i].flags & C_DIRTY)
+		{
+			block_write(cache[i].block_dev, cache[i].sector, &cache[i].data);
+		}
+	}
+}
+
 static int cache_evict()
 {
 //printf("cache_evict called\n");
