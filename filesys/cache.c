@@ -163,7 +163,7 @@ static int cache_lookup(struct block* block, block_sector_t sector, int load)
 	if (i == CACHE_SIZE)
 	{
 		i = cache_evict();
-
+//printf("evicted %i\n", i);
 		struct block* old_block = cache[i].block_dev;
 		block_sector_t old_sector = cache[i].sector;
 		int dirty = cache[i].flags & C_DIRTY;
@@ -180,13 +180,12 @@ static int cache_lookup(struct block* block, block_sector_t sector, int load)
 			block_write(old_block, old_sector, &cache[i].data);
 		}
 
-		if (load)
-		{
-			block_read(block, sector, &cache[i].data);
-		}
+		block_read(block, sector, &cache[i].data);
+
 	}
 	else
 	{
+//printf("found %i\n", i);
 		/* make sure that we will acquire this lock before any other thread will evict it */
 		intr_disable();
 		lock_release(&cache_lock);
