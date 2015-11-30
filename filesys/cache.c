@@ -141,7 +141,6 @@ static int cache_lookup(struct block* block, block_sector_t sector, int load)
 {
 //printf("cache_lookup called\n");
 	int i = 0;
-	int evicted = -1;
 	lock_acquire(&cache_lock);
 	for(; i < CACHE_SIZE; ++i)
 	{
@@ -155,6 +154,7 @@ static int cache_lookup(struct block* block, block_sector_t sector, int load)
 
 		struct block* old_block = cache[i].block_dev;
 		block_sector_t old_sector = cache[i].sector;
+		int dirty = cache[i].flags & C_DIRTY;
 
 		cache[i].block_dev = block;
 		cache[i].sector = sector;
@@ -162,10 +162,10 @@ static int cache_lookup(struct block* block, block_sector_t sector, int load)
 
 		lock_release(&cache_lock);
 
-		if(cache[i].flags & C_DIRTY)
+		if(dirty)
 		{
-			//printf("%i is written\n", ret);
-			block_write(old_block, old_sector, &cache[ret].data);
+			//printf("%i is written\n", i);
+			block_write(old_block, old_sector, &cache[i].data);
 		}
 
 		if (load)
