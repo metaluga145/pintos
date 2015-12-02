@@ -172,13 +172,13 @@ static int cache_lookup(struct block* block, block_sector_t sector, int load)
 		cache[i].sector = sector;
 		cache[i].flags = 0;
 
-		lock_release(&cache_lock);
-
 		if(dirty)
 		{
 			//printf("%i is written\n", i);
 			block_write(old_block, old_sector, &cache[i].data);
 		}
+
+		lock_release(&cache_lock);
 
 		block_read(block, sector, &cache[i].data);
 
