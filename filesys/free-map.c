@@ -40,6 +40,35 @@ free_map_allocate (size_t cnt, block_sector_t *sectorp)
   return sector != BITMAP_ERROR;
 }
 
+bool free_map_allocate_sparse(size_t cnt, block_sector_t *sector_arr)
+{
+	int i = 0;
+	block_sector_t sector = 0;
+	for(; i < cnt; ++i)
+	{
+		sector = bitmap_scan_and_flip (free_map, sector, 1, false);
+		if (sector == BITMAP_ERROR) break;
+		sector_arr[i] = sector
+	}
+
+	if (sector == BITMAP_ERROR) goto fail;
+
+	if (sector != BITMAP_ERROR
+	    && free_map_file != NULL
+	    && !bitmap_write (free_map, free_map_file))
+	  goto fail;
+
+	return true;
+
+fail:
+	int finished = i;
+	for(i = 0; i < finished; ++i)
+	{
+		bitmp_set(free_map, sector_arr[i], false);
+	}
+	return false;
+}
+
 /* Makes CNT sectors starting at SECTOR available for use. */
 void
 free_map_release (block_sector_t sector, size_t cnt)

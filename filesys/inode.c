@@ -15,10 +15,9 @@
    Must be exactly BLOCK_SECTOR_SIZE bytes long. */
 struct inode_disk
   {
-    block_sector_t start;               /* First data sector. */
     off_t length;                       /* File size in bytes. */
     unsigned magic;                     /* Magic number. */
-    uint32_t unused[125];               /* Not used. */
+    block_sector_t blocks[126];         /* Sectors. */
   };
 
 /* Returns the number of sectors to allocate for an inode SIZE
@@ -49,7 +48,27 @@ byte_to_sector (const struct inode *inode, off_t pos)
 {
   ASSERT (inode != NULL);
   if (pos < inode->data.length)
-    return inode->data.start + pos / BLOCK_SECTOR_SIZE;
+  {
+	  block_sector_t sec_num = pos / BLOCK_SECTOR_SIZE;
+	  if(sec_num < 124) return inode->data.blocks[sec_num];
+	  else if (sec_num < (124 + 128))
+	  {
+		  block_sector_t blocks[128];
+		  cache_read(fs_device, inode->data.blocks[124], blocks, 0, BLOCK_SECTOR_SIZE);
+		  return blocks[sec_num - 124];
+	  }else if(sec_num < (124 + 128 + 128*128))
+	  {
+		  block_sector_t blocks[128];
+		  cache_read(fs_device, inode->data.blocks[125], blocks, 0, BLOCK_SECTOR_SIZE);
+
+		  block_sector_t lvl2 = blocks[(sec_num - 252) / 128];
+
+		  cache_read(fs_device, lvl2, blocks, 0, BLOCK_SECTOR_SIZE);
+
+		  return blocks[(sec_num - 252) % 128];
+	  }
+	  else return -1;
+  }
   else
     return -1;
 }
@@ -63,6 +82,149 @@ void
 inode_init (void) 
 {
   list_init (&open_inodes);
+}
+
+static int inode_extend(struct inode* inode, off_t bytes_to_add)
+{
+	block_sector_t new_sec_num = bytes_to_sectors(bytes_to_add);
+	block_sector_t cur_sec_num = bytes_to_sectors(inode->data.length);
+
+	static char zeros[BLOCK_SECTOR_SIZE];
+
+	/* additional block */
+	block_sector_t count = 0;
+	block_sector_t need_to_write = new_sec_num;
+	/* fill direct links */
+	if (cur_sec_num < 125)
+	{
+		need_to_write -= (124 - cur_sec_num);
+		need_to_write = need_to_wrrite > 0 ? need_to_write : 0;
+	}
+
+	/* fill indirect links */
+	if (need_to_write != 0 && cur_sec_num < (125 + 128))
+	{
+		block_sector_t start = cur_sec_num > 124 ? (cur_sec_num - 124) : 0;
+		if (!start) count++;
+
+		need_to_write -= 128 - start;
+	}
+
+	/* fil doubly-indirect links */
+	if (need_to_write != 0)
+	{
+		block_sector_t start_total = cur_sec_num > 124 + 128 ? (cur_sec_num - 124 - 128) : 0;
+		block_sector_t start_lvl1 = start_total / 128;
+		block_sector_t start_lvl2 = start_total % 128;
+
+		/* if level 1 block is not allocated */
+		if (start_lvl1 == 0 && start_lvl2 == 0)
+			count++;
+
+		if(start_lvl2)
+			need_to_write -= 128 - start_lvl2;	// lvl2 block is allocated already, so just fill it
+
+		if(need_to_write > 0)
+		{
+			count += need_to_write / 128; 			// number of full lvl2 blocks needed to write
+			count += need_to_write % 128 ? 1 : 0;	// one additional block may be needed
+		}
+	}
+
+	/* allocate space for the list of new sectors */
+	new_sec_num += count;
+	block_sector_t* new_sectors = malloc((new_sec_num)* sizeof(block_sector_t));
+
+	int added = 0;
+	if(free_map_allocate_sparse(new_sec_num, new_sectors))
+	{
+		/* fill direct level */
+		while (cur_sec_num < 124 && added < new_sec_num)
+		{
+			inode->data.sectors[cur_sec_num++] = new_sectors[added];
+			cache_write(fs_device, new_sectors[added++], zeroes, 0, SECTOR_BLOCK_SIZE);
+		}
+
+		/* fill indirect level */
+		if (added == new_sec_num) goto done;
+		block_sector_t direct[128];
+		if (added > 0)
+		{
+			inode->data.sectors[124] = new_sectors[added++];
+			memset(direct, 0, 128*sizeof(block_sector_t));
+		} else
+		{
+			cache_read(fs_device, inode->data.sectors[124], direct, 0, BLOCK_SECTOR_SIZE);
+		}
+
+		while(cur_sec_num < 124 + 128)
+		{
+			direct[cur_sec_num++ - 124] = new_sectors[added];
+			cache_write(fs_device, new_sectors[added++], zeroes, 0, SECTOR_BLOCK_SIZE);
+		}
+
+		cache_write(fs_device,inode->data.sectors[124], direct, 0, SECTOR_BLOCK_SIZE);
+		/* fill doubly indirect level */
+		if (added == new_sec_num) goto done;
+
+		block_sector_t indirect[128];
+		/* check if block is new */
+		if (added > 0)
+		{
+			inode->data.sectors[125] = new_sectors[added++];
+			memset(indirect, 0, SECTOR_BLOCK_SIZE);
+		} else
+		{
+			/* block was written previously */
+			cache_read(fs_device, inode->data.sectors[125], indirect, 0, BLOCK_SECTOR_SIZE);
+		}
+
+		block_sector_t start_total = (cur_sec_num - 124 - 128);
+		block_sector_t start_lvl1 = start_total / 128;
+		block_sector_t start_lvl2 = start_total % 128;
+		/* if direct inode was created before */
+		if(start_lvl2)
+		{
+			/* read and fill it */
+			cache_read(fs_device, indirect[start_lvl1], direct, 0, BLOCK_SECTOR_SIZE);
+			while(added < new_sec_num && start_lvl2 < 128)
+			{
+				direct[start_lvl2++] = new_sectors[added];
+				cache_write(fs_device, new_sectors[added++], zeroes, 0, SECTOR_BLOCK_SIZE);
+			}
+			cache_write(fs_device, indirect[start_lvl1], direct, 0, BLOCK_SECTOR_SIZE);
+			/* advance */
+			start_lvl1++;
+			start_lvl2 = 0;
+		}
+		/* fill new nodes */
+		while(added < new_sec_num)
+		{
+			memset(direct, 0, SECTOR_BLOCK_SIZE);
+			indirect[start_lvl1] = new_sectors[added++];
+			while(added < new_sec_num && start_lvl2 < 128)
+			{
+				direct[start_lvl2++] = new_sectors[added];
+				cache_write(fs_device, new_sectors[added++], zeroes, 0, SECTOR_BLOCK_SIZE);
+			}
+			cache_write(fs_device, indirect[start_lvl1], direct, 0, BLOCK_SECTOR_SIZE);
+			start_lvl1++;
+			start_lvl2 = 0;
+		}
+		/* store indirect node to disk */
+		cache_read(fs_device, inode->data.sectors[125], indirect, 0, BLOCK_SECTOR_SIZE);
+	}
+	else
+	{
+		/* failed to allocate space */
+		free(new_sectors);
+		return 0;
+	}
+
+	/* success */
+	done:
+	free(new_sectors);
+	return 1;
 }
 
 /* Initializes an inode with LENGTH bytes of data and
@@ -88,19 +250,10 @@ inode_create (block_sector_t sector, off_t length)
       size_t sectors = bytes_to_sectors (length);
       disk_inode->length = length;
       disk_inode->magic = INODE_MAGIC;
-      if (free_map_allocate (sectors, &disk_inode->start)) 
-        {
-          cache_write (fs_device, sector, disk_inode, 0, BLOCK_SECTOR_SIZE);
-          if (sectors > 0) 
-            {
-              static char zeros[BLOCK_SECTOR_SIZE];
-              size_t i;
-              
-              for (i = 0; i < sectors; i++) 
-                cache_write (fs_device, disk_inode->start + i, zeros, 0, BLOCK_SECTOR_SIZE);
-            }
-          success = true; 
-        } 
+      memset(disk_inode->blocks, 0, 124*sizeof(block_sector_t));
+      success = inode_extend(disk_inode, length);
+      if (success)
+    	  cache_write(fs_device, sector, disk_inode, 0, BLOCK_SECTOR_SIZE);
       free (disk_inode);
     }
   return success;
