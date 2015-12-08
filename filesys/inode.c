@@ -11,6 +11,9 @@
 /* Identifies an inode. */
 #define INODE_MAGIC 0x494e4f44
 
+#define NDIRECT		(int)124
+#define NINDIRECT	(int)128
+#define NDINDIRECT	(int)128*128
 /* On-disk inode.
    Must be exactly BLOCK_SECTOR_SIZE bytes long. */
 struct inode_disk
@@ -86,7 +89,8 @@ inode_init (void)
 
 static int inode_extend(struct inode* inode, off_t bytes_to_add)
 {
-	block_sector_t new_sec_num = bytes_to_sectors(bytes_to_add);
+	off_t offset = BLOCK_SECTOR_SIZE -  (inode->data.length % BLOCK_SECTOR_SIZE);
+	block_sector_t new_sec_num = bytes_to_sectors(bytes_to_add - offset);
 	block_sector_t cur_sec_num = bytes_to_sectors(inode->data.length);
 
 	static char zeros[BLOCK_SECTOR_SIZE];
@@ -151,7 +155,7 @@ static int inode_extend(struct inode* inode, off_t bytes_to_add)
 		if (added > 0)
 		{
 			inode->data.sectors[124] = new_sectors[added++];
-			memset(direct, 0, 128*sizeof(block_sector_t));
+			memset(direct, -1, 128*sizeof(block_sector_t));
 		} else
 		{
 			cache_read(fs_device, inode->data.sectors[124], direct, 0, BLOCK_SECTOR_SIZE);
@@ -172,7 +176,7 @@ static int inode_extend(struct inode* inode, off_t bytes_to_add)
 		if (added > 0)
 		{
 			inode->data.sectors[125] = new_sectors[added++];
-			memset(indirect, 0, SECTOR_BLOCK_SIZE);
+			memset(indirect, -1, SECTOR_BLOCK_SIZE);
 		} else
 		{
 			/* block was written previously */
@@ -250,7 +254,7 @@ inode_create (block_sector_t sector, off_t length)
       size_t sectors = bytes_to_sectors (length);
       disk_inode->length = length;
       disk_inode->magic = INODE_MAGIC;
-      memset(disk_inode->blocks, 0, 124*sizeof(block_sector_t));
+      memset(disk_inode->blocks, -1, 126*sizeof(block_sector_t));
       success = inode_extend(disk_inode, length);
       if (success)
     	  cache_write(fs_device, sector, disk_inode, 0, BLOCK_SECTOR_SIZE);
@@ -311,6 +315,44 @@ inode_get_inumber (const struct inode *inode)
   return inode->sector;
 }
 
+static void inode_free(struct inode_disk * inode)
+{
+	int i = 0;
+	/* free direct blocks */
+	for(; i < NDIRECT && inode>blocks[i] != -1; ++i)
+	{
+		free_map_release (inode>blocks[i], 1);
+	}
+	/* check if there are indirect blocks */
+	if (i != NDIRECT || inode>blocks[NDIRECT] == -1) return;
+
+	block_sector_t direct[128];
+	/* read indirect blocks and free them */
+	cache_read(fs_device, inode>blocks[NDIRECT], direct, 0, BLOCK_SECTOR_SIZE);
+	for(i = 0; i < NINDIRECT && direct[i] != -1; ++i)
+	{
+		free_map_release (direct[i], 1);
+	}
+	free_map_release (inode>blocks[NDIRECT], 1);
+	/* check if there are doubly-indirect blocks */
+	if(i != NINDIRECT || inode>blocks[NDIRECT + 1] == -1) return;
+
+	block_sector_t indirect[128];
+	cache_read(fs_device, inode>blocks[NDIRECT + 1], indirect, 0, BLOCK_SECTOR_SIZE);
+	int j = 0;
+	/* free the rest */
+	for(i = 0; i < NINDIRECT && indirect[i] != -1; ++i)
+	{
+		cache_read(fs_device, indirect[i], direct, 0, BLOCK_SECTOR_SIZE);
+		for(j = 0; j < NINDIRECT && direct[j] != -1; ++j)
+		{
+			free_map_release (direct[j], 1);
+		}
+		free_map_release (indirect[i], 1);
+	}
+	free_map_release (inode>blocks[NDIRECT + 1], 1);
+}
+
 /* Closes INODE and writes it to disk.
    If this was the last reference to INODE, frees its memory.
    If INODE was also a removed inode, frees its blocks. */
@@ -330,9 +372,7 @@ inode_close (struct inode *inode)
       /* Deallocate blocks if removed. */
       if (inode->removed) 
         {
-          free_map_release (inode->sector, 1);
-          free_map_release (inode->data.start,
-                            bytes_to_sectors (inode->data.length)); 
+          inode_free(&inode->data);
         }
 
       free (inode); 
@@ -398,6 +438,12 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
 
   if (inode->deny_write_cnt)
     return 0;
+
+  if(size + offset > inode->data.length)
+  {
+	  int success = inode_extend(inode, size + offset - inode->data.length);
+	  if (success == 0) return 0;
+  }
 
   while (size > 0) 
     {
