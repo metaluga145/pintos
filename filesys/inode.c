@@ -42,6 +42,8 @@ struct inode
     struct inode_disk data;             /* Inode content. */
   };
 
+static void inode_free(struct inode_disk*, int);
+
 /* Returns the block device sector that contains byte offset POS
    within INODE.
    Returns -1 if INODE does not contain data for a byte at offset
@@ -95,140 +97,160 @@ static int inode_extend(struct inode_disk* inode, off_t bytes_to_add)
 
 	static char zeroes[BLOCK_SECTOR_SIZE];
 
-	/* additional block */
+	int start = (int)cur_sec_num;
 	block_sector_t count = 0;
-	block_sector_t need_to_write = new_sec_num;
-	/* fill direct links */
-	if (cur_sec_num < 125)
+	block_sector_t new_sector = 0;
+	int i = 0;
+	if (start < NDIRECT)
 	{
-		need_to_write -= (124 - cur_sec_num);
-		need_to_write = need_to_write > 0 ? need_to_write : 0;
-	}
-
-	/* fill indirect links */
-	if (need_to_write != 0 && cur_sec_num < (125 + 128))
-	{
-		block_sector_t start = cur_sec_num > 124 ? (cur_sec_num - 124) : 0;
-		if (!start) count++;
-
-		need_to_write -= 128 - start;
-	}
-
-	/* fil doubly-indirect links */
-	if (need_to_write != 0)
-	{
-		block_sector_t start_total = cur_sec_num > 124 + 128 ? (cur_sec_num - 124 - 128) : 0;
-		block_sector_t start_lvl1 = start_total / 128;
-		block_sector_t start_lvl2 = start_total % 128;
-
-		/* if level 1 block is not allocated */
-		if (start_lvl1 == 0 && start_lvl2 == 0)
-			count++;
-
-		if(start_lvl2)
-			need_to_write -= 128 - start_lvl2;	// lvl2 block is allocated already, so just fill it
-
-		if(need_to_write > 0)
+		i = start;
+		/* free direct blocks */
+		while(i < NDIRECT && count < new_sec_num)
 		{
-			count += need_to_write / 128; 			// number of full lvl2 blocks needed to write
-			count += need_to_write % 128 ? 1 : 0;	// one additional block may be needed
-		}
-	}
-
-	/* allocate space for the list of new sectors */
-	new_sec_num += count;
-	block_sector_t* new_sectors = malloc((new_sec_num)* sizeof(block_sector_t));
-printf("new sect num = %u: %p\n", new_sec_num, new_sectors);
-	block_sector_t added = 0;
-	if(free_map_allocate_sparse(new_sec_num, new_sectors))
-	{
-		/* fill direct level */
-		while (cur_sec_num < 124 && added < new_sec_num)
-		{
-			inode->blocks[cur_sec_num++] = new_sectors[added];
-			cache_write(fs_device, new_sectors[added++], zeroes, 0, BLOCK_SECTOR_SIZE);
-		}
-
-		/* fill indirect level */
-		if (added == new_sec_num) goto done;
-		block_sector_t direct[128];
-		if (added > 0)
-		{
-			inode->blocks[124] = new_sectors[added++];
-			memset(direct, -1, 128*sizeof(block_sector_t));
-		} else
-		{
-			cache_read(fs_device, inode->blocks[124], direct, 0, BLOCK_SECTOR_SIZE);
-		}
-
-		while(cur_sec_num < 124 + 128)
-		{
-			direct[cur_sec_num++ - 124] = new_sectors[added];
-			cache_write(fs_device, new_sectors[added++], zeroes, 0, BLOCK_SECTOR_SIZE);
-		}
-
-		cache_write(fs_device,inode->blocks[124], direct, 0, BLOCK_SECTOR_SIZE);
-		/* fill doubly indirect level */
-		if (added == new_sec_num) goto done;
-
-		block_sector_t indirect[128];
-		/* check if block is new */
-		if (added > 0)
-		{
-			inode->blocks[125] = new_sectors[added++];
-			memset(indirect, -1, BLOCK_SECTOR_SIZE);
-		} else
-		{
-			/* block was written previously */
-			cache_read(fs_device, inode->blocks[125], indirect, 0, BLOCK_SECTOR_SIZE);
-		}
-
-		block_sector_t start_total = (cur_sec_num - 124 - 128);
-		block_sector_t start_lvl1 = start_total / 128;
-		block_sector_t start_lvl2 = start_total % 128;
-		/* if direct inode was created before */
-		if(start_lvl2)
-		{
-			/* read and fill it */
-			cache_read(fs_device, indirect[start_lvl1], direct, 0, BLOCK_SECTOR_SIZE);
-			while(added < new_sec_num && start_lvl2 < 128)
+			if (!free_map_allocate(1, &new_sector))
 			{
-				direct[start_lvl2++] = new_sectors[added];
-				cache_write(fs_device, new_sectors[added++], zeroes, 0, BLOCK_SECTOR_SIZE);
+				inode_free(inode, start + 1);
+				return 0;
 			}
-			cache_write(fs_device, indirect[start_lvl1], direct, 0, BLOCK_SECTOR_SIZE);
-			/* advance */
-			start_lvl1++;
-			start_lvl2 = 0;
+			cache_write(fs_device, new_sector, zeroes, 0, BLOCK_SECTOR_SIZE);
+			inode->blocks[i] = new_sector;
+			++i;
+			++count;
 		}
-		/* fill new nodes */
-		while(added < new_sec_num)
+
+		/* check if there are indirect blocks */
+		if (count == new_sec_num) return 1;
+	}
+
+	block_sector_t direct[NINDIRECT];
+	/* read indirect blocks and free them */
+	if (start < NINDIRECT)
+	{
+		if(i == 0) i = start - NDIRECT;
+		else i = 0;
+
+		if (inode->blocks[NDIRECT] != -1)
 		{
-			memset(direct, -1, BLOCK_SECTOR_SIZE);
-			indirect[start_lvl1] = new_sectors[added++];
-			while(added < new_sec_num && start_lvl2 < 128)
-			{
-				direct[start_lvl2++] = new_sectors[added];
-				cache_write(fs_device, new_sectors[added++], zeroes, 0, BLOCK_SECTOR_SIZE);
-			}
-			cache_write(fs_device, indirect[start_lvl1], direct, 0, BLOCK_SECTOR_SIZE);
-			start_lvl1++;
-			start_lvl2 = 0;
+			cache_read(fs_device, inode->blocks[NDIRECT], direct, 0, BLOCK_SECTOR_SIZE);
 		}
-		/* store indirect node to disk */
-		cache_read(fs_device, inode->blocks[125], indirect, 0, BLOCK_SECTOR_SIZE);
+		else
+		{
+			ASSERT(i == 0);
+			if (!free_map_allocate(1, &new_sector))
+			{
+				inode_free(inode, start + 1);
+				return 0;
+			}
+			inode->blocks[NDIRECT] = new_sector;
+			memset(direct, -1, NINDIRECT * sizeof(block_sector_t));
+		}
+
+		while(i < NINDIRECT && count < new_sec_num)
+		{
+			if (!free_map_allocate(1, &new_sector))
+			{
+				cache_write(fs_device, inode->blocks[NDIRECT], direct, 0, BLOCK_SECTOR_SIZE);
+				inode_free(inode, start + 1);
+				return 0;
+			}
+			cache_write(fs_device, new_sector, zeroes, 0, BLOCK_SECTOR_SIZE);
+			direct[i] = new_sector;
+			++i;
+			++count;
+		}
+
+		/* check if there are indirect blocks */
+		if (count == new_sec_num) return 1;
+	}
+
+	int j = 0;
+	if (i == 0)
+	{
+		int num = start - NDIRECT - NINDIRECT;
+		i = num / NINDIRECT;
+		j = num % NINDIRECT;
+	}
+	else i = 0;
+	block_sector_t indirect[128];
+	if (inode->blocks[NDIRECT + 1] != -1)
+	{
+		cache_read(fs_device, inode->blocks[NDIRECT + 1], indirect, 0, BLOCK_SECTOR_SIZE);
+		if(indirect[i] != -1)
+		{
+			cache_read(fs_device, indirect[i], direct, 0, BLOCK_SECTOR_SIZE);
+			while(j < NINDIRECT && count < new_sec_num)
+			{
+				if (!free_map_allocate(1, &new_sector))
+				{
+					cache_write(fs_device, indirect[i], direct, 0, BLOCK_SECTOR_SIZE);
+					inode_free(inode, start + 1);
+					return 0;
+				}
+				cache_write(fs_device, new_sector, zeroes, 0, BLOCK_SECTOR_SIZE);
+				direct[i] = new_sector;
+				++j;
+				++count;
+			}
+			if (count == new_sec_num) return 1;
+
+			++i;
+		}
 	}
 	else
 	{
-		/* failed to allocate space */
-		free(new_sectors);
-		return 0;
+		ASSERT(i == 0);
+		if (!free_map_allocate(1, &new_sector))
+		{
+			inode_free(inode, start + 1);
+			return 0;
+		}
+		inode->blocks[NDIRECT + 1] = new_sector;
+		memset(direct, -1, NINDIRECT * sizeof(block_sector_t));
 	}
 
-	/* success */
-	done:
-	free(new_sectors);
-	return 1;
+	/* free the rest */
+	while(i < NINDIRECT && count < new_sec_num)
+	{
+		if (!free_map_allocate(1, &new_sector))
+		{
+			cache_write(fs_device, inode->blocks[NDIRECT + 1], indirect, 0, BLOCK_SECTOR_SIZE);
+			inode_free(inode, start + 1);
+			return 0;
+		}
+		direct[i] = new_sector;
+		memset(direct, -1, NINDIRECT * sizeof(block_sector_t));
+		while(j < NINDIRECT && count < new_sec_num)
+		{
+			if (!free_map_allocate(1, &new_sector))
+			{
+				cache_write(fs_device, indirect[i], direct, 0, BLOCK_SECTOR_SIZE);
+				cache_write(fs_device, inode->blocks[NDIRECT + 1], indirect, 0, BLOCK_SECTOR_SIZE);
+				inode_free(inode, start + 1);
+				return 0;
+			}
+			cache_write(fs_device, new_sector, zeroes, 0, BLOCK_SECTOR_SIZE);
+			direct[i] = new_sector;
+			++j;
+			++count;
+		}
+		cache_write(fs_device, indirect[i], direct, 0, BLOCK_SECTOR_SIZE);
+
+		if (count == new_sec_num)
+		{
+			cache_write(fs_device, inode->blocks[NDIRECT + 1], indirect, 0, BLOCK_SECTOR_SIZE);
+			return 1;
+		}
+
+		++i;
+		++count;
+	}
+
+	cache_write(fs_device, inode->blocks[NDIRECT + 1], indirect, 0, BLOCK_SECTOR_SIZE);
+	if (count == new_sec_num) return 1;
+
+	inode_free(inode, start + 1);
+	return 0;
+
 }
 
 /* Initializes an inode with LENGTH bytes of data and
@@ -315,40 +337,60 @@ inode_get_inumber (const struct inode *inode)
   return inode->sector;
 }
 
-static void inode_free(struct inode_disk * inode)
+static void inode_free(struct inode_disk * inode, int start)
 {
 	int i = 0;
-	/* free direct blocks */
-	for(; i < NDIRECT && inode->blocks[i] != -1; ++i)
+	if (start < NDIRECT)
 	{
-		free_map_release (inode->blocks[i], 1);
+		i = start;
+		/* free direct blocks */
+		for(; i < NDIRECT && inode->blocks[i] != -1; ++i)
+		{
+			free_map_release (inode->blocks[i], 1);
+		}
+
+		/* check if there are indirect blocks */
+		if (i != NDIRECT || inode->blocks[NDIRECT] == -1) return;
 	}
-	/* check if there are indirect blocks */
-	if (i != NDIRECT || inode->blocks[NDIRECT] == -1) return;
 
 	block_sector_t direct[128];
 	/* read indirect blocks and free them */
-	cache_read(fs_device, inode->blocks[NDIRECT], direct, 0, BLOCK_SECTOR_SIZE);
-	for(i = 0; i < NINDIRECT && direct[i] != -1; ++i)
+	if (start < NINDIRECT)
 	{
-		free_map_release (direct[i], 1);
-	}
-	free_map_release (inode->blocks[NDIRECT], 1);
-	/* check if there are doubly-indirect blocks */
-	if(i != NINDIRECT || inode->blocks[NDIRECT + 1] == -1) return;
+		if(i == 0) i = start - NDIRECT;
+		else i = 0;
 
+		cache_read(fs_device, inode->blocks[NDIRECT], direct, 0, BLOCK_SECTOR_SIZE);
+		for(; i < NINDIRECT && direct[i] != -1; ++i)
+		{
+			free_map_release (direct[i], 1);
+		}
+		free_map_release (inode->blocks[NDIRECT], 1);
+		/* check if there are doubly-indirect blocks */
+		if(i != NINDIRECT || inode->blocks[NDIRECT + 1] == -1) return;
+	}
+
+	int j = 0;
+	if (i == 0)
+	{
+		int num = start - NDIRECT - NINDIRECT;
+		i = num / NINDIRECT;
+		j = num % NINDIRECT;
+	}
+	else i = 0;
 	block_sector_t indirect[128];
 	cache_read(fs_device, inode->blocks[NDIRECT + 1], indirect, 0, BLOCK_SECTOR_SIZE);
-	int j = 0;
+
 	/* free the rest */
-	for(i = 0; i < NINDIRECT && indirect[i] != -1; ++i)
+	for(; i < NINDIRECT && indirect[i] != -1; ++i)
 	{
 		cache_read(fs_device, indirect[i], direct, 0, BLOCK_SECTOR_SIZE);
-		for(j = 0; j < NINDIRECT && direct[j] != -1; ++j)
+		for(; j < NINDIRECT && direct[j] != -1; ++j)
 		{
 			free_map_release (direct[j], 1);
 		}
 		free_map_release (indirect[i], 1);
+		j = 0;
 	}
 	free_map_release (inode->blocks[NDIRECT + 1], 1);
 }
@@ -372,7 +414,7 @@ inode_close (struct inode *inode)
       /* Deallocate blocks if removed. */
       if (inode->removed) 
         {
-          inode_free(&inode->data);
+          inode_free(&inode->data, 0);
         }
 
       free (inode); 
