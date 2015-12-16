@@ -11,6 +11,7 @@
 /* Identifies an inode. */
 #define INODE_MAGIC 0x494e4f44
 
+/* sizes of each part */
 #define NDIRECT		(int)124
 #define NINDIRECT	(int)128
 #define NDINDIRECT	(int)128*128
@@ -53,19 +54,21 @@ byte_to_sector (const struct inode *inode, off_t pos)
 {
   ASSERT (inode != NULL);
 //printf("byte_to_sector pos = %u\n", pos);
+  /* check if the length is satisfied */
   if (pos < inode->data.length)
   {
+	  /* sector number */
 	  block_sector_t sec_num = pos / BLOCK_SECTOR_SIZE;
 //printf("sec_num = %u\n", sec_num);
-	  if(sec_num < 124) return inode->data.blocks[sec_num];
-	  else if (sec_num < (124 + 128))
+	  if(sec_num < 124) return inode->data.blocks[sec_num];		// id directly accessible
+	  else if (sec_num < (124 + 128))							// if indirecly accessible
 	  {
 		  block_sector_t blocks[128];
 //printf("lvl1 block = %u\n", inode->data.blocks[124]);
 		  cache_read(fs_device, inode->data.blocks[124], blocks, 0, BLOCK_SECTOR_SIZE);
 //printf("lvl2 block = %u\n", blocks[sec_num - 124]);
 		  return blocks[sec_num - 124];
-	  }else if(sec_num < (124 + 128 + 128*128))
+	  }else if(sec_num < (124 + 128 + 128*128))					// if doubly-inrectly accessible
 	  {
 //printf("lvl1 block = %u\n", inode->data.blocks[125]);
 		  block_sector_t blocks[128];
@@ -98,22 +101,24 @@ inode_init (void)
 static int inode_extend(struct inode_disk* inode, off_t bytes_to_add)
 {
 //printf("extend called\n");
+	/* the offset, which is already allocated, but not used */
 	off_t offset = inode->length % BLOCK_SECTOR_SIZE == 0 ? 0 : BLOCK_SECTOR_SIZE -  (inode->length % BLOCK_SECTOR_SIZE);
-	block_sector_t new_sec_num = bytes_to_sectors(bytes_to_add - offset);
-	if (new_sec_num == 0) return 1;
-	block_sector_t cur_sec_num = bytes_to_sectors(inode->length);
+	block_sector_t new_sec_num = bytes_to_sectors(bytes_to_add - offset);	// number of sectors to add
+	if (new_sec_num == 0) return 1;											// if space is already allocated
+	block_sector_t cur_sec_num = bytes_to_sectors(inode->length);			// current number of sectors
 //printf("new_sec_num = %u\n", new_sec_num);
 //printf("cur_sec_num = %u\n", cur_sec_num);
-	static char zeroes[BLOCK_SECTOR_SIZE];
+	static char zeroes[BLOCK_SECTOR_SIZE];					// zeroes for writing to disk
 
 	int start = (int)cur_sec_num;
 	block_sector_t count = 0;
 	block_sector_t new_sector = 0;
 	int i = 0;
+	/* if need to allocate direct blocks */
 	if (start < NDIRECT)
 	{
 		i = start;
-		/* free direct blocks */
+		/* allocate direct blocks */
 		while(i < NDIRECT && count < new_sec_num)
 		{
 			if (!free_map_allocate(1, &new_sector))
@@ -122,6 +127,7 @@ static int inode_extend(struct inode_disk* inode, off_t bytes_to_add)
 				return 0;
 			}
 //printf("count = %u, allocated = %u\n", count, new_sector);
+			/* store zeroes to the new disk block */
 			cache_write(fs_device, new_sector, zeroes, 0, BLOCK_SECTOR_SIZE);
 			inode->blocks[i] = new_sector;
 			++i;
@@ -132,19 +138,20 @@ static int inode_extend(struct inode_disk* inode, off_t bytes_to_add)
 		if (count == new_sec_num) return 1;
 	}
 
-	block_sector_t direct[NINDIRECT];
-	/* read indirect blocks and free them */
+	block_sector_t direct[NINDIRECT];	// to store indirect blocks
+	/* if need to allocate indirect blocks */
 	if (start < NDIRECT + NINDIRECT)
 	{
 		if(i == 0) i = start - NDIRECT;
 		else i = 0;
-
+		// check if the block with direct pointers is allocated already */
 		if (inode->blocks[NDIRECT] != -1)
 		{
 			cache_read(fs_device, inode->blocks[NDIRECT], direct, 0, BLOCK_SECTOR_SIZE);
 		}
 		else
 		{
+			/* if not, allocate */
 			ASSERT(i == 0);
 			if (!free_map_allocate(1, &new_sector))
 			{
@@ -156,6 +163,7 @@ static int inode_extend(struct inode_disk* inode, off_t bytes_to_add)
 			memset(direct, -1, NINDIRECT * sizeof(block_sector_t));
 		}
 
+		/* allocate new blocks and write them back */
 		while(i < NINDIRECT && count < new_sec_num)
 		{
 			if (!free_map_allocate(1, &new_sector))
@@ -185,12 +193,16 @@ static int inode_extend(struct inode_disk* inode, off_t bytes_to_add)
 	}
 	else i = 0;
 	block_sector_t indirect[128];
+	/* check if the indirect level is allocated */
 	if (inode->blocks[NDIRECT + 1] != -1)
 	{
+		/* read it */
 		cache_read(fs_device, inode->blocks[NDIRECT + 1], indirect, 0, BLOCK_SECTOR_SIZE);
 		if(indirect[i] != -1)
 		{
+			/* if direct level is allocated */
 			cache_read(fs_device, indirect[i], direct, 0, BLOCK_SECTOR_SIZE);
+			/* allocate new blocks to fill the block of the direct level */
 			while(j < NINDIRECT && count < new_sec_num)
 			{
 				if (!free_map_allocate(1, &new_sector))
@@ -216,6 +228,7 @@ static int inode_extend(struct inode_disk* inode, off_t bytes_to_add)
 	}
 	else
 	{
+		/* if not, just allocate new indirect-level block */
 		ASSERT(i == 0);
 		if (!free_map_allocate(1, &new_sector))
 		{
@@ -227,7 +240,7 @@ static int inode_extend(struct inode_disk* inode, off_t bytes_to_add)
 		memset(direct, -1, NINDIRECT * sizeof(block_sector_t));
 	}
 
-	/* free the rest */
+	/* allocate the rest */
 	while(i < NINDIRECT && count < new_sec_num)
 	{
 		if (!free_map_allocate(1, &new_sector))
@@ -299,8 +312,8 @@ inode_create (block_sector_t sector, off_t length)
       disk_inode->length = 0;
       disk_inode->magic = INODE_MAGIC;
       memset(disk_inode->blocks, -1, 126*sizeof(block_sector_t));
-      success = inode_extend(disk_inode, length);
-	      disk_inode->length = length;
+      success = inode_extend(disk_inode, length);	// increase length
+	  disk_inode->length = length;
       if (success)
     	  cache_write(fs_device, sector, disk_inode, 0, BLOCK_SECTOR_SIZE);
       free (disk_inode);
@@ -361,6 +374,7 @@ inode_get_inumber (const struct inode *inode)
   return inode->sector;
 }
 
+/* frees the rest of the file starting from start */
 static void inode_free(struct inode_disk * inode, int start)
 {
 	int i = 0;
